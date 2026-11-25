@@ -53,6 +53,7 @@ let latestZeroShotDetections = [];
 let latestFaceAccessoryDetections = [];
 let latestGeneralZeroShotDetections = [];
 let lastGeneralZeroShotTime = 0;
+let smoothedObjectBoxes = [];
 const objectInputCanvas = document.createElement("canvas");
 objectInputCanvas.width = 640;
 objectInputCanvas.height = 480;
@@ -76,12 +77,18 @@ const OBJECT_INTERVAL_MS = 450;
 const ZERO_SHOT_INTERVAL_MS = 2400;
 const GENERAL_ZERO_SHOT_INTERVAL_MS = 12000;
 const ZERO_SHOT_LABELS = [
-  "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
-  "headphones", "wallet", "keys", "pen", "pencil", "notebook",
-  "smartphone", "laptop", "tablet", "computer mouse", "keyboard",
-  "watch", "water bottle", "coffee mug", "charger", "power bank",
+  "eyeglasses", "sunglasses", "glasses case",
+  "wireless earbuds", "earbuds", "earbuds charging case", "wireless earbuds case",
+  "headphones", "headphone case",
+  "smartphone", "mobile phone", "cell phone", "phone case",
+  "laptop", "tablet", "computer mouse", "keyboard", "computer monitor",
+  "wallet", "purse", "keys", "keychain", "pen", "pencil", "notebook",
+  "watch", "smartwatch", "water bottle", "coffee mug", "cup",
+  "phone charger", "USB cable", "power adapter", "power bank",
   "remote control", "game controller", "scissors", "umbrella",
-  "backpack", "handbag", "book", "camera", "calculator"
+  "backpack", "handbag", "book", "camera", "calculator",
+  "speaker", "Bluetooth speaker", "flash drive", "USB stick",
+  "perfume bottle", "stapler", "coin purse", "sunglasses case"
 ];
 const FACE_ACCESSORY_LABELS = [
   "eyeglasses", "glasses", "sunglasses"
@@ -202,6 +209,7 @@ async function startCamera() {
     lastZeroShotDetectionTime = 0;
     latestBaseObjectDetections = [];
     latestZeroShotDetections = [];
+    smoothedObjectBoxes = [];
     latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
     latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
     latestObjectResult = { detections: [] };
@@ -269,7 +277,7 @@ function renderLoop() {
       if (zeroShotObjectDetector && !zeroShotBusy && timestamp - lastZeroShotDetectionTime >= ZERO_SHOT_INTERVAL_MS) {
         runZeroShotObjectDetection(timestamp);
       }
-      latestObjectResult = { detections: [...latestBaseObjectDetections, ...latestZeroShotDetections] };
+      latestObjectResult = { detections: smoothObjectDetections([...latestBaseObjectDetections, ...latestZeroShotDetections]) };
       showObjects(latestObjectResult);
     } else {
       latestBaseObjectDetections = [];
@@ -527,7 +535,7 @@ async function runZeroShotObjectDetection(timestamp) {
       return !duplicate;
     });
 
-    latestObjectResult = { detections: [...latestBaseObjectDetections, ...latestZeroShotDetections] };
+    latestObjectResult = { detections: smoothObjectDetections([...latestBaseObjectDetections, ...latestZeroShotDetections]) };
     showObjects(latestObjectResult);
   } catch (error) {
     console.error("Error al detectar objetos con OWL-ViT:", error);
@@ -535,6 +543,52 @@ async function runZeroShotObjectDetection(timestamp) {
   } finally {
     zeroShotBusy = false;
   }
+}
+
+function smoothObjectDetections(detections) {
+  // Asocia detecciones consecutivas por etiqueta y cercanía para suavizar el movimiento
+  // de los recuadros sin ejecutar otro modelo pesado en cada fotograma.
+  const nextTracks = [];
+  const used = new Set();
+  for (const detection of detections) {
+    const box = detection.boundingBox;
+    if (!box) continue;
+    const label = detection.categories?.[0]?.categoryName || "object";
+    const cx = box.originX + box.width / 2;
+    const cy = box.originY + box.height / 2;
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+    smoothedObjectBoxes.forEach((track, index) => {
+      if (used.has(index) || track.label !== label) return;
+      const distance = Math.hypot(cx - track.cx, cy - track.cy);
+      const limit = Math.max(70, Math.max(box.width, box.height) * 0.9);
+      if (distance < limit && distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    });
+    let smoothed = { ...box };
+    if (bestIndex >= 0) {
+      used.add(bestIndex);
+      const old = smoothedObjectBoxes[bestIndex];
+      const alpha = 0.62;
+      smoothed = {
+        originX: old.box.originX + (box.originX - old.box.originX) * alpha,
+        originY: old.box.originY + (box.originY - old.box.originY) * alpha,
+        width: old.box.width + (box.width - old.box.width) * alpha,
+        height: old.box.height + (box.height - old.box.height) * alpha
+      };
+    }
+    nextTracks.push({
+      label,
+      cx: smoothed.originX + smoothed.width / 2,
+      cy: smoothed.originY + smoothed.height / 2,
+      box: smoothed
+    });
+    detection.boundingBox = smoothed;
+  }
+  smoothedObjectBoxes = nextTracks;
+  return detections;
 }
 
 function showObjects(result) {
@@ -552,7 +606,7 @@ function showObjects(result) {
     return translateObject(category?.categoryName || "Objeto") + " (" + Math.round((category?.score || 0) * 100) + "%)";
   });
   objectValue.textContent = labels.join(" · ");
-  objectDetail.textContent = detections.length + " objeto(s) detectado(s).";
+  objectDetail.textContent = detections.length + " objeto(s) · Confianza visible en cada recuadro · Seguimiento suavizado activo.";
 }
 
 function translateObject(label) {
