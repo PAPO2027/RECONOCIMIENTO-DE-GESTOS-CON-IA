@@ -25,6 +25,8 @@ const faceActionDetail = $("#faceActionDetail");
 const headModel = $("#headModel");
 const customModelInput = $("#customModelInput");
 const customModelButton = $("#customModelButton");
+const customGestureInput = $("#customGestureInput");
+const customGestureButton = $("#customGestureButton");
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODELS = {
@@ -379,6 +381,25 @@ function drawPoints(handResult, faceResult, objectResult) {
     ctx.fillRect(box.originX, Math.max(0, box.originY - 24), ctx.measureText(caption).width + 12, 23);
     ctx.fillStyle = "#43e8ff";
     ctx.fillText(caption, box.originX + 6, y);
+  }
+}
+
+async function loadCustomGestureModel(file) {
+  try {
+    setMessage("Cargando modelo personalizado de señas...");
+    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    const modelAssetBuffer = new Uint8Array(await file.arrayBuffer());
+    const recognizer = await GestureRecognizer.createFromOptions(vision, {
+      baseOptions: { modelAssetBuffer, delegate: "GPU" },
+      runningMode: "VIDEO",
+      numHands: 2
+    });
+    gestureRecognizer = recognizer;
+    handDetail.textContent = "Modelo de señas personalizado activo: " + file.name;
+    setMessage("Modelo de señas cargado correctamente.");
+  } catch (error) {
+    console.error(error);
+    setMessage("Archivo no compatible. Necesitas un modelo .task preparado para MediaPipe Gesture Recognizer.", true);
   }
 }
 
