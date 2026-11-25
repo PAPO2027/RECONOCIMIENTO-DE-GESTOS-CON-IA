@@ -43,6 +43,17 @@ let stream = null;
 let gestureRecognizer = null;
 let faceLandmarker = null;
 let objectDetector = null;
+let zeroShotObjectDetector = null;
+let zeroShotLoading = false;
+let zeroShotFailed = false;
+let zeroShotBusy = false;
+let lastZeroShotDetectionTime = 0;
+let latestBaseObjectDetections = [];
+let latestZeroShotDetections = [];
+const objectInputCanvas = document.createElement("canvas");
+objectInputCanvas.width = 320;
+objectInputCanvas.height = 240;
+const objectInputContext = objectInputCanvas.getContext("2d", { willReadFrequently: true });
 let animationId = null;
 let isRunning = false;
 let lastVideoTime = -1;
@@ -54,6 +65,17 @@ let latestObjectResult = { detections: [] };
 let smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
 const FACE_INTERVAL_MS = 66;
 const OBJECT_INTERVAL_MS = 220;
+const ZERO_SHOT_INTERVAL_MS = 1400;
+const ZERO_SHOT_LABELS = [
+  "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
+  "headphones", "headphone case", "wallet", "keys", "pen", "pencil",
+  "notebook", "smartphone", "laptop", "tablet", "computer mouse",
+  "keyboard", "watch", "water bottle", "coffee mug", "charger",
+  "power bank", "remote control", "game controller", "scissors",
+  "umbrella", "shoe", "cap", "camera", "backpack", "handbag",
+  "book", "glasses case", "perfume bottle", "speaker", "calculator",
+  "sunglasses case", "coin purse", "flash drive", " stapler"
+];
 const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 const previousHandCenters = new Map();
 
@@ -80,6 +102,7 @@ function updateFeatureSelection() {
   selectionSummary.textContent = selectedFeatures.size + (selectedFeatures.size === 1 ? " función seleccionada" : " funciones seleccionadas");
   if (!selectedFeatures.size) setMessage("Selecciona al menos una función para iniciar el escáner.", true);
   else if (!isRunning) setMessage("Configuración lista. Puedes activar una o varias funciones.");
+  if (isRunning && isFeatureSelected("objects")) loadZeroShotObjectModel();
 }
 
 featureInputs.forEach(input => input.addEventListener("change", updateFeatureSelection));
@@ -162,6 +185,9 @@ async function startCamera() {
     lastVideoTime = -1;
     lastFaceDetectionTime = 0;
     lastObjectDetectionTime = 0;
+    lastZeroShotDetectionTime = 0;
+    latestBaseObjectDetections = [];
+    latestZeroShotDetections = [];
     latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
     latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
     latestObjectResult = { detections: [] };
@@ -175,6 +201,7 @@ async function startCamera() {
     appStatus.textContent = "SISTEMA ANALIZANDO";
     setMessage("Escáner activo. Muestra tus manos, rostro y objetos.");
     renderLoop();
+    if (isFeatureSelected("objects")) loadZeroShotObjectModel();
   } catch (error) {
     console.error(error);
     const reason = error.name === "NotAllowedError"
@@ -212,11 +239,22 @@ function renderLoop() {
       latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
     }
 
-    if (isFeatureSelected("objects") && timestamp - lastObjectDetectionTime >= OBJECT_INTERVAL_MS) {
-      latestObjectResult = objectDetector.detectForVideo(video, timestamp);
-      lastObjectDetectionTime = timestamp;
+    if (isFeatureSelected("objects")) {
+      if (timestamp - lastObjectDetectionTime >= OBJECT_INTERVAL_MS) {
+        const baseResult = objectDetector.detectForVideo(video, timestamp);
+        latestBaseObjectDetections = (baseResult.detections || []).filter(item =>
+          (item.categories?.[0]?.categoryName || "").toLowerCase() !== "person"
+        );
+        lastObjectDetectionTime = timestamp;
+      }
+      if (zeroShotObjectDetector && !zeroShotBusy && timestamp - lastZeroShotDetectionTime >= ZERO_SHOT_INTERVAL_MS) {
+        runZeroShotObjectDetection(timestamp);
+      }
+      latestObjectResult = { detections: [...latestBaseObjectDetections, ...latestZeroShotDetections] };
       showObjects(latestObjectResult);
-    } else if (!isFeatureSelected("objects")) {
+    } else {
+      latestBaseObjectDetections = [];
+      latestZeroShotDetections = [];
       latestObjectResult = { detections: [] };
     }
     showHands(latestHandResult);
@@ -344,6 +382,64 @@ function updateHeadPose(matrix) {
   headModel.style.transform = "rotateX(" + (-p) + "deg) rotateY(" + y + "deg) rotateZ(" + (-r) + "deg)";
 }
 
+async function loadZeroShotObjectModel() {
+  if (zeroShotObjectDetector || zeroShotLoading || zeroShotFailed || !isFeatureSelected("objects")) return;
+  zeroShotLoading = true;
+  setMessage("Descargando el modelo adicional de objetos. La primera carga puede tardar...");
+  try {
+    const { pipeline } = await import("@huggingface/transformers");
+    zeroShotObjectDetector = await pipeline(
+      "zero-shot-object-detection",
+      "Xenova/owlvit-base-patch32"
+    );
+    if (isRunning && isFeatureSelected("objects")) {
+      setMessage("Modelo adicional listo: también buscará lentes, audífonos y más objetos.");
+      appStatus.textContent = "MODELOS DE OBJETOS LISTOS";
+    }
+  } catch (error) {
+    console.error("No se pudo cargar OWL-ViT:", error);
+    zeroShotFailed = true;
+    setMessage("El modelo adicional no pudo descargarse. El detector general seguirá funcionando.", true);
+  } finally {
+    zeroShotLoading = false;
+  }
+}
+
+async function runZeroShotObjectDetection(timestamp) {
+  if (!zeroShotObjectDetector || zeroShotBusy || !isFeatureSelected("objects") || !isRunning) return;
+  zeroShotBusy = true;
+  lastZeroShotDetectionTime = timestamp;
+  try {
+    objectInputContext.drawImage(video, 0, 0, objectInputCanvas.width, objectInputCanvas.height);
+    const predictions = await zeroShotObjectDetector(
+      objectInputCanvas,
+      ZERO_SHOT_LABELS,
+      { threshold: 0.075, top_k: 20 }
+    );
+    if (!isRunning || !isFeatureSelected("objects")) return;
+    const scaleX = video.videoWidth / objectInputCanvas.width;
+    const scaleY = video.videoHeight / objectInputCanvas.height;
+    latestZeroShotDetections = (predictions || []).map(item => ({
+      boundingBox: {
+        originX: item.box.xmin * scaleX,
+        originY: item.box.ymin * scaleY,
+        width: (item.box.xmax - item.box.xmin) * scaleX,
+        height: (item.box.ymax - item.box.ymin) * scaleY
+      },
+      categories: [{
+        categoryName: item.label,
+        score: item.score
+      }]
+    }));
+    latestObjectResult = { detections: [...latestBaseObjectDetections, ...latestZeroShotDetections] };
+    showObjects(latestObjectResult);
+  } catch (error) {
+    console.error("Error al detectar objetos con OWL-ViT:", error);
+  } finally {
+    zeroShotBusy = false;
+  }
+}
+
 function showObjects(result) {
   // La sección de objetos ignora personas; el reconocimiento facial sigue funcionando por separado.
   const detections = (result.detections || []).filter(item =>
@@ -386,9 +482,16 @@ function translateObject(label) {
     hair_drier:"secadora de cabello", toothbrush:"cepillo de dientes",
     // Etiquetas disponibles si se carga un modelo personalizado entrenado para ellas
     glasses:"lentes", eyeglasses:"lentes", sunglasses:"gafas de sol",
-    headphones:"audífonos", earbuds:"audífonos inalámbricos",
-    wireless_earbuds:"audífonos inalámbricos", airpods:"audífonos inalámbricos",
-    earbud_case:"estuche de audífonos", headphones_case:"estuche de audífonos",
+    "wireless earbuds":"audífonos inalámbricos", "earbuds charging case":"estuche de audífonos",
+    headphones:"audífonos", "headphone case":"estuche de audífonos",
+    "glasses case":"estuche de lentes", "sunglasses case":"estuche de gafas",
+    earbuds:"audífonos inalámbricos", wireless_earbuds:"audífonos inalámbricos",
+    airpods:"audífonos inalámbricos", earbud_case:"estuche de audífonos",
+    headphones_case:"estuche de audífonos", "computer mouse":"ratón",
+    "smartphone":"celular", "coffee mug":"taza", "water bottle":"botella",
+    "remote control":"control remoto", "game controller":"control de videojuegos",
+    "power bank":"batería portátil", "flash drive":"memoria USB",
+    "perfume bottle":"perfume", "coin purse":"monedero", "sunglasses":"gafas de sol",
     wallet:"billetera", keys:"llaves", key:"llave", pen:"esfero", pencil:"lápiz",
     notebook:"cuaderno", stapler:"grapadora", remote_control:"control remoto",
     charger:"cargador", power_bank:"batería portátil", watch:"reloj", monitor:"monitor",
@@ -518,6 +621,9 @@ function stopCamera() {
   faceDetail.textContent = "La IA analizará los rasgos visibles.";
   headValue.textContent = "Esperando...";
   headDetail.textContent = "Se estimará la orientación 3D.";
+  latestBaseObjectDetections = [];
+  latestZeroShotDetections = [];
+  latestObjectResult = { detections: [] };
   objectValue.textContent = "Esperando...";
   objectDetail.textContent = "El detector buscará objetos.";
   faceActionValue.textContent = "Esperando...";
