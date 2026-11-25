@@ -50,6 +50,9 @@ let zeroShotBusy = false;
 let lastZeroShotDetectionTime = 0;
 let latestBaseObjectDetections = [];
 let latestZeroShotDetections = [];
+let latestFaceAccessoryDetections = [];
+let latestGeneralZeroShotDetections = [];
+let lastGeneralZeroShotTime = 0;
 const objectInputCanvas = document.createElement("canvas");
 objectInputCanvas.width = 640;
 objectInputCanvas.height = 480;
@@ -69,7 +72,8 @@ let latestObjectResult = { detections: [] };
 let smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
 const FACE_INTERVAL_MS = 66;
 const OBJECT_INTERVAL_MS = 220;
-const ZERO_SHOT_INTERVAL_MS = 2200;
+const ZERO_SHOT_INTERVAL_MS = 1700;
+const GENERAL_ZERO_SHOT_INTERVAL_MS = 7000;
 const ZERO_SHOT_LABELS = [
   "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
   "headphones", "wallet", "keys", "pen", "pencil", "notebook",
@@ -79,7 +83,7 @@ const ZERO_SHOT_LABELS = [
   "backpack", "handbag", "book", "camera", "calculator"
 ];
 const FACE_ACCESSORY_LABELS = [
-  "eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"
+  "eyeglasses", "glasses", "sunglasses"
 ];
 const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 const previousHandCenters = new Map();
@@ -426,30 +430,8 @@ async function runZeroShotObjectDetection(timestamp) {
     const frameHeight = video.videoHeight;
     if (!frameWidth || !frameHeight) return;
 
-    // Primera pasada: objetos cotidianos en toda la imagen.
-    objectInputContext.drawImage(video, 0, 0, objectInputCanvas.width, objectInputCanvas.height);
-    const generalPredictions = await zeroShotObjectDetector(
-      objectInputCanvas,
-      ZERO_SHOT_LABELS,
-      { threshold: 0.07, top_k: 18 }
-    );
-    if (!isRunning || !isFeatureSelected("objects")) return;
-
-    const scaleX = frameWidth / objectInputCanvas.width;
-    const scaleY = frameHeight / objectInputCanvas.height;
-    const mappedGeneral = (generalPredictions || []).map(item => ({
-      boundingBox: {
-        originX: item.box.xmin * scaleX,
-        originY: item.box.ymin * scaleY,
-        width: (item.box.xmax - item.box.xmin) * scaleX,
-        height: (item.box.ymax - item.box.ymin) * scaleY
-      },
-      categories: [{ categoryName: item.label, score: item.score }]
-    }));
-
-    // Segunda pasada: recortamos el rostro para que los lentes ocupen más píxeles.
+    // Prioriza accesorios del rostro para responder más rápido al buscar lentes.
     const face = latestFaceResult.faceLandmarks?.[0];
-    let mappedFaceAccessories = [];
     if (face?.length) {
       const xs = face.map(point => point.x * frameWidth);
       const ys = face.map(point => point.y * frameHeight);
@@ -459,6 +441,7 @@ async function runZeroShotObjectDetection(timestamp) {
       const faceBottom = Math.min(frameHeight, Math.max(...ys));
       const faceWidth = faceRight - faceLeft;
       const faceHeight = faceBottom - faceTop;
+
       if (faceWidth > 30 && faceHeight > 30) {
         const padX = faceWidth * 0.22;
         const padY = faceHeight * 0.22;
@@ -468,18 +451,21 @@ async function runZeroShotObjectDetection(timestamp) {
         const cropBottom = Math.min(frameHeight, faceBottom + padY);
         const cropWidth = cropRight - cropX;
         const cropHeight = cropBottom - cropY;
+
         faceObjectContext.clearRect(0, 0, faceObjectCanvas.width, faceObjectCanvas.height);
         faceObjectContext.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0,
           faceObjectCanvas.width, faceObjectCanvas.height);
+
         const accessoryPredictions = await zeroShotObjectDetector(
           faceObjectCanvas,
           FACE_ACCESSORY_LABELS,
-          { threshold: 0.045, top_k: 8 }
+          { threshold: 0.045, top_k: 5 }
         );
         if (!isRunning || !isFeatureSelected("objects")) return;
+
         const faceScaleX = cropWidth / faceObjectCanvas.width;
         const faceScaleY = cropHeight / faceObjectCanvas.height;
-        mappedFaceAccessories = (accessoryPredictions || []).map(item => ({
+        latestFaceAccessoryDetections = (accessoryPredictions || []).map(item => ({
           boundingBox: {
             originX: cropX + item.box.xmin * faceScaleX,
             originY: cropY + item.box.ymin * faceScaleY,
@@ -488,20 +474,47 @@ async function runZeroShotObjectDetection(timestamp) {
           },
           categories: [{ categoryName: item.label, score: item.score }]
         }));
+      } else {
+        latestFaceAccessoryDetections = [];
       }
+    } else {
+      latestFaceAccessoryDetections = [];
     }
 
-    // Evita mostrar simultáneamente dos etiquetas casi idénticas sobre la misma zona.
-    const combined = [...mappedFaceAccessories, ...mappedGeneral];
+    // La búsqueda general se ejecuta con menor frecuencia para reducir carga.
+    if (timestamp - lastGeneralZeroShotTime >= GENERAL_ZERO_SHOT_INTERVAL_MS || !latestGeneralZeroShotDetections.length) {
+      objectInputContext.drawImage(video, 0, 0, objectInputCanvas.width, objectInputCanvas.height);
+      const generalPredictions = await zeroShotObjectDetector(
+        objectInputCanvas,
+        ZERO_SHOT_LABELS,
+        { threshold: 0.07, top_k: 12 }
+      );
+      if (!isRunning || !isFeatureSelected("objects")) return;
+
+      const scaleX = frameWidth / objectInputCanvas.width;
+      const scaleY = frameHeight / objectInputCanvas.height;
+      latestGeneralZeroShotDetections = (generalPredictions || []).map(item => ({
+        boundingBox: {
+          originX: item.box.xmin * scaleX,
+          originY: item.box.ymin * scaleY,
+          width: (item.box.xmax - item.box.xmin) * scaleX,
+          height: (item.box.ymax - item.box.ymin) * scaleY
+        },
+        categories: [{ categoryName: item.label, score: item.score }]
+      }));
+      lastGeneralZeroShotTime = timestamp;
+    }
+
+    // Evita mostrar etiquetas de lentes duplicadas sobre la misma zona.
+    const combined = [...latestFaceAccessoryDetections, ...latestGeneralZeroShotDetections];
     latestZeroShotDetections = combined.filter((item, index) => {
       const label = item.categories[0].categoryName;
       const box = item.boundingBox;
+      const eyewear = ["eyeglasses", "glasses", "sunglasses"];
       const duplicate = combined.slice(0, index).some(previous => {
+        const previousLabel = previous.categories[0].categoryName;
+        if (!eyewear.includes(label) || !eyewear.includes(previousLabel)) return false;
         const p = previous.boundingBox;
-        const sameFamily = ["eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"]
-          .includes(label) && ["eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"]
-          .includes(previous.categories[0].categoryName);
-        if (!sameFamily) return false;
         const intersectionW = Math.max(0, Math.min(box.originX + box.width, p.originX + p.width) - Math.max(box.originX, p.originX));
         const intersectionH = Math.max(0, Math.min(box.originY + box.height, p.originY + p.height) - Math.max(box.originY, p.originY));
         const intersection = intersectionW * intersectionH;
