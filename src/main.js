@@ -1,4 +1,4 @@
-import { FilesetResolver, GestureRecognizer, FaceLandmarker } from "@mediapipe/tasks-vision";
+import { FilesetResolver, GestureRecognizer, FaceLandmarker, ObjectDetector } from "@mediapipe/tasks-vision";
 import "./style.css";
 
 const video = document.querySelector("#camera");
@@ -18,20 +18,32 @@ const faceValue = document.querySelector("#faceValue");
 const faceDetail = document.querySelector("#faceDetail");
 const headValue = document.querySelector("#headValue");
 const headDetail = document.querySelector("#headDetail");
+const objectValue = document.querySelector("#objectValue");
+const objectDetail = document.querySelector("#objectDetail");
+const faceActionValue = document.querySelector("#faceActionValue");
+const faceActionDetail = document.querySelector("#faceActionDetail");
+const headModel = document.querySelector("#headModel");
+const customModelInput = document.querySelector("#customModelInput");
+const customModelButton = document.querySelector("#customModelButton");
 
 const MODELS = {
   gesture: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-  face: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+  face: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+  objects: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite"
 };
 
 let stream = null;
 let gestureRecognizer = null;
-let faceLandmarker = null;
+let faceLandmarker = null;\nlet objectDetector = null;
 let animationId = null;
 let lastVideoTime = -1;
 let lastFaceDetectionTime = 0;
 let latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
-let latestFaceResult = { faceLandmarks: [], faceBlendshapes: [] };
+let latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
+let latestObjectResult = { detections: [] };
+let lastObjectDetectionTime = 0;
+const OBJECT_INTERVAL_MS = 180;
+let smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
 const FACE_INTERVAL_MS = 66;
 let isRunning = false;
 const previousHandCenters = new Map();
@@ -72,19 +84,25 @@ async function loadModels() {
         runningMode: "VIDEO",
         numFaces: 1,
         outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: false
+        outputFacialTransformationMatrixes: true
       })
     ]);
-    return [gesture, face];
+    const objects = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: MODELS.objects, delegate },
+      runningMode: "VIDEO",
+      scoreThreshold: 0.45,
+      maxResults: 8
+    });
+    return [gesture, face, objects];
   };
 
   // GPU evita bloquear tanto el hilo principal. Si no está disponible, usa CPU.
   try {
-    [gestureRecognizer, faceLandmarker] = await createModels("GPU");
+    [gestureRecognizer, faceLandmarker, objectDetector] = await createModels("GPU");
     console.info("MediaPipe ejecutándose con aceleración GPU.");
   } catch (gpuError) {
     console.warn("GPU no disponible; se utilizará CPU.", gpuError);
-    [gestureRecognizer, faceLandmarker] = await createModels("CPU");
+    [gestureRecognizer, faceLandmarker, objectDetector] = await createModels("CPU");
   }
 }
 
@@ -95,7 +113,7 @@ async function startCamera() {
   }
   startButton.disabled = true;
   try {
-    if (!gestureRecognizer || !faceLandmarker) await loadModels();
+    if (!gestureRecognizer || !faceLandmarker || !objectDetector) await loadModels();
 
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -111,7 +129,10 @@ async function startCamera() {
     lastVideoTime = -1;
     lastFaceDetectionTime = 0;
     latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
-    latestFaceResult = { faceLandmarks: [], faceBlendshapes: [] };
+    latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
+    latestObjectResult = { detections: [] };
+    lastObjectDetectionTime = 0;
+    smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
     placeholder.hidden = true;
     cameraStage.classList.add("scanning");
     stopButton.disabled = false;
@@ -184,156 +205,114 @@ function showFace(result) {
   if (!result.faceLandmarks?.length) {
     faceValue.textContent = "Rostro no detectado";
     faceDetail.textContent = "Coloca tu rostro dentro del área de la cámara.";
+    faceActionValue.textContent = "Sin actividad";
+    faceActionDetail.textContent = "Se detectarán guiños y movimientos visibles de ojos y boca.";
     headValue.textContent = "Sin datos";
-    headDetail.textContent = "Se necesita detectar un rostro para estimar su orientación.";
+    headDetail.textContent = "Se necesita detectar un rostro.";
+    headModel.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
     return;
   }
 
-  const landmarks = result.faceLandmarks[0];
   const categories = result.faceBlendshapes?.[0]?.categories || [];
   const scores = Object.fromEntries(categories.map(item => [item.categoryName, item.score]));
   const smile = ((scores.mouthSmileLeft || 0) + (scores.mouthSmileRight || 0)) / 2;
   const mouthOpen = scores.jawOpen || 0;
+  const blinkLeft = scores.eyeBlinkLeft || 0;
+  const blinkRight = scores.eyeBlinkRight || 0;
 
   let visualLabel = "Rostro detectado";
   if (smile > 0.45) visualLabel = "Sonrisa detectada";
   else if (mouthOpen > 0.5) visualLabel = "Boca abierta";
   faceValue.textContent = visualLabel;
-  faceDetail.textContent = "Se detectaron puntos faciales. La etiqueta describe rasgos visibles, no emociones.";
+  faceDetail.textContent = "Análisis de rasgos visibles; no interpreta emociones ni identidad.";
 
-  const leftEye = landmarks[33];
-  const rightEye = landmarks[263];
-  const nose = landmarks[1];
-  const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-  const eyeCenterY = (leftEye.y + rightEye.y) / 2;
-  const horizontalOffset = nose.x - eyeCenterX;
-  const verticalOffset = nose.y - eyeCenterY;
+  let faceAction = "Ojos abiertos";
+  if (blinkLeft > 0.62 && blinkRight < 0.38) faceAction = "Guiño del ojo izquierdo";
+  else if (blinkRight > 0.62 && blinkLeft < 0.38) faceAction = "Guiño del ojo derecho";
+  else if (blinkLeft > 0.62 && blinkRight > 0.62) faceAction = "Parpadeo";
+  else if (mouthOpen > 0.55) faceAction = "Boca abierta";
+  faceActionValue.textContent = faceAction;
+  faceActionDetail.textContent = `Ojo izquierdo: ${Math.round(blinkLeft*100)}% · Ojo derecho: ${Math.round(blinkRight*100)}% · Apertura de boca: ${Math.round(mouthOpen*100)}%`;
 
-  let direction = "De frente";
-  if (Math.abs(horizontalOffset) > 0.035) {
-    direction = horizontalOffset > 0 ? "Girando hacia un lado" : "Girando hacia el otro lado";
+  const matrix = result.facialTransformationMatrixes?.[0];
+  const raw = matrix?.data ? Array.from(matrix.data) : [];
+  if (raw.length >= 16) {
+    // La matriz de MediaPipe describe la rotación 3D de la cara.
+    const r00 = raw[0], r10 = raw[1], r20 = raw[2];
+    const r21 = raw[6], r22 = raw[10];
+    const pitch = Math.asin(Math.max(-1, Math.min(1, -r20))) * 180 / Math.PI;
+    const yaw = Math.atan2(r10, r00) * 180 / Math.PI;
+    const roll = Math.atan2(r21, r22) * 180 / Math.PI;
+    const alpha = 0.28;
+    smoothedHeadAngles.yaw += (yaw - smoothedHeadAngles.yaw) * alpha;
+    smoothedHeadAngles.pitch += (pitch - smoothedHeadAngles.pitch) * alpha;
+    smoothedHeadAngles.roll += (roll - smoothedHeadAngles.roll) * alpha;
+    const y = smoothedHeadAngles.yaw;
+    const p = smoothedHeadAngles.pitch;
+    const r = smoothedHeadAngles.roll;
+    const direction = Math.abs(y) > 12 ? (y > 0 ? "Giro a la izquierda" : "Giro a la derecha")
+      : Math.abs(p) > 12 ? (p > 0 ? "Mirando hacia abajo" : "Mirando hacia arriba")
+      : Math.abs(r) > 12 ? (r > 0 ? "Inclinación a la izquierda" : "Inclinación a la derecha")
+      : "Mirando al frente";
+    headValue.textContent = direction;
+    headDetail.textContent = `Yaw ${y.toFixed(0)}° · Pitch ${p.toFixed(0)}° · Roll ${r.toFixed(0)}°`;
+    headModel.style.transform = `rotateX(${-p}deg) rotateY(${y}deg) rotateZ(${-r}deg)`;
+  } else {
+    headValue.textContent = "Calculando orientación";
+    headDetail.textContent = "Esperando la matriz facial 3D.";
   }
-  if (verticalOffset < 0.12) direction = "Mirando hacia arriba";
-  else if (verticalOffset > 0.22) direction = "Mirando hacia abajo";
-  headValue.textContent = direction;
-  headDetail.textContent = "Estimación aproximada según la posición de los puntos faciales.";
 }
 
-function getHandMovement(hands, handednesses) {
-  previousFrameTime = performance.now();
-  const currentKeys = new Set();
-  let label = "Movimiento estable";
-  hands.forEach((hand, index) => {
-    if (!hand.length) return;
-    const side = handednesses[index]?.[0]?.categoryName || `mano-${index}`;
-    currentKeys.add(side);
-    const wrist = hand[0];
-    const previous = previousHandCenters.get(side);
-    if (previous) {
-      const dx = wrist.x - previous.x;
-      const dy = wrist.y - previous.y;
-      if (Math.hypot(dx, dy) > 0.012) {
-        if (Math.abs(dx) > Math.abs(dy)) label = dx > 0 ? "Movimiento hacia la derecha" : "Movimiento hacia la izquierda";
-        else label = dy > 0 ? "Movimiento hacia abajo" : "Movimiento hacia arriba";
-      }
-    }
-    previousHandCenters.set(side, { x: wrist.x, y: wrist.y });
+function identifyRaisedFingers(hand) {
+  if (!hand || hand.length < 21) return [];
+  const distance = (a,b) => Math.hypot(hand[a].x-hand[b].x, hand[a].y-hand[b].y, (hand[a].z||0)-(hand[b].z||0));
+  const names = [];
+  if (distance(4,5) > distance(3,5) + 0.025) names.push("pulgar");
+  if (distance(8,0) > distance(6,0) + 0.035) names.push("índice");
+  if (distance(12,0) > distance(10,0) + 0.035) names.push("medio");
+  if (distance(16,0) > distance(14,0) + 0.035) names.push("anular");
+  if (distance(20,0) > distance(18,0) + 0.035) names.push("meñique");
+  return names;
+}
+
+function showObjects(result) {
+  const detections = result.detections || [];
+  if (!detections.length) {
+    objectValue.textContent = "Sin objetos detectados";
+    objectDetail.textContent = "El detector general busca objetos cotidianos del conjunto COCO.";
+    return;
+  }
+  const labels = detections.slice(0,5).map(item => {
+    const category = item.categories?.[0];
+    const name = category?.categoryName || "Objeto";
+    const confidence = Math.round((category?.score || 0) * 100);
+    return `${translateObject(name)} (${confidence}%)`;
   });
-  for (const key of previousHandCenters.keys()) if (!currentKeys.has(key)) previousHandCenters.delete(key);
-  return label;
+  objectValue.textContent = labels.join(" · ");
+  objectDetail.textContent = `${detections.length} detección(es). Puedes cargar un modelo TFLite compatible entrenado con tus propias categorías.`;
 }
 
-function drawConnections(points, connections, color, width) {
-  if (!connections?.length) return;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = "round";
-  for (const link of connections) {
-    const a = points[link.start ?? link[0]];
-    const b = points[link.end ?? link[1]];
-    if (!a || !b) continue;
-    ctx.beginPath();
-    ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
-    ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
-    ctx.stroke();
+function translateObject(label) {
+  const names = { person:"persona", bicycle:"bicicleta", car:"auto", motorcycle:"motocicleta", airplane:"avión", bus:"autobús", train:"tren", truck:"camión", boat:"barco", bottle:"botella", cup:"taza", chair:"silla", couch:"sofá", laptop:"computadora", cell_phone:"celular", book:"libro", backpack:"mochila", tv:"televisor", keyboard:"teclado", mouse:"ratón", apple:"manzana", banana:"plátano", orange:"naranja", dog:"perro", cat:"gato" };
+  return names[label] || label.replaceAll("_"," ");
+}
+
+async function loadCustomObjectModel(file) {
+  try {
+    setMessage("Cargando tu modelo personalizado...");
+    const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    const buffer = new Uint8Array(await file.arrayBuffer());
+    const customDetector = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: { modelAssetBuffer: buffer, delegate: "GPU" },
+      runningMode: "VIDEO",
+      scoreThreshold: 0.4,
+      maxResults: 10
+    });
+    objectDetector = customDetector;
+    objectDetail.textContent = `Modelo personalizado cargado: ${file.name}`;
+    setMessage("Modelo personalizado activo. Las detecciones se procesan localmente.");
+  } catch (error) {
+    console.error(error);
+    setMessage("No se pudo cargar. Usa un modelo .tflite compatible con MediaPipe Object Detector y con metadatos.", true);
   }
 }
-
-function drawPoints(handResult, faceResult) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Manos: estructura completa, líneas gruesas y articulaciones muy visibles.
-  for (const hand of handResult.landmarks || []) {
-    drawConnections(hand, HAND_CONNECTIONS, "rgba(190,145,255,0.98)", 4);
-    for (let i = 0; i < hand.length; i++) {
-      const point = hand[i];
-      const x = point.x * canvas.width;
-      const y = point.y * canvas.height;
-      ctx.beginPath();
-      ctx.arc(x, y, i === 0 ? 7 : 5.5, 0, Math.PI * 2);
-      ctx.fillStyle = "#a879ff";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = "#f4eaff";
-      ctx.fill();
-    }
-  }
-
-  // Rostro: malla triangular completa más contornos de ojos, labios y cara.
-  const mesh = FaceLandmarker.FACE_LANDMARKS_TESSELATION || [];
-  const faceGroups = [
-    [FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, "#75f0b7", 3.2],
-    [FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, "#b5ff9b", 2.5],
-    [FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, "#b5ff9b", 2.5],
-    [FaceLandmarker.FACE_LANDMARKS_LIPS, "#75f0b7", 2.8],
-    [FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, "#75f0b7", 2.2],
-    [FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, "#75f0b7", 2.2]
-  ];
-
-  for (const face of faceResult.faceLandmarks || []) {
-    drawConnections(face, mesh, "rgba(110,240,185,0.48)", 1.15);
-    for (const [connections, color, width] of faceGroups) {
-      drawConnections(face, connections || [], color, width);
-    }
-
-    // Puntos más densos para que la malla se aprecie como en la referencia.
-    for (let i = 0; i < face.length; i += 2) {
-      const point = face[i];
-      ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 2.15, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(174,255,214,0.9)";
-      ctx.fill();
-    }
-  }
-}
-
-function stopCamera() {
-  isRunning = false;
-  if (animationId) cancelAnimationFrame(animationId);
-  animationId = null;
-  if (stream) stream.getTracks().forEach(track => track.stop());
-  stream = null;
-  video.srcObject = null;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  previousHandCenters.clear();
-  previousFrameTime = 0;
-  placeholder.hidden = false;
-  cameraStage.classList.remove("scanning");
-  startButton.disabled = false;
-  stopButton.disabled = true;
-  cameraStatus.innerHTML = "<span></span> CÁMARA APAGADA";
-  cameraStatus.classList.remove("active");
-  appStatus.textContent = "SISTEMA EN ESPERA";
-  gestureValue.textContent = "Esperando...";
-  handDetail.textContent = "La IA identificará gestos cuando actives la cámara.";
-  faceValue.textContent = "Esperando...";
-  faceDetail.textContent = "La IA buscará un rostro y analizará sus rasgos visibles.";
-  headValue.textContent = "Esperando...";
-  headDetail.textContent = "Se estimará la orientación de la cabeza.";
-  setMessage("Escáner detenido. La cámara está apagada.");
-}
-
-startButton.addEventListener("click", startCamera);
-stopButton.addEventListener("click", stopCamera);
-window.addEventListener("beforeunload", stopCamera);
