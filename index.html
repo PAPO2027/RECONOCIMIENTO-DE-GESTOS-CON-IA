@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Aplicación web para reconocer gestos de manos y analizar puntos faciales con inteligencia artificial." />
+    <meta name="theme-color" content="#101827" />
+    <title>Reconocimiento de Gestos con IA</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-mark">IA</div>
+        <div>
+          <p class="eyebrow">PROYECTO DE INTELIGENCIA ARTIFICIAL</p>
+          <h1>Reconocimiento de Gestos</h1>
+        </div>
+        <span class="status-pill" id="appStatus">En espera</span>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">ANÁLISIS EN TIEMPO REAL</p>
+            <h2>Interactúa con la cámara</h2>
+            <p class="intro-copy">La aplicación identifica gestos de manos y analiza puntos de referencia del rostro directamente en tu navegador.</p>
+          </div>
+          <div class="privacy-note"><span class="privacy-dot"></span> El video se procesa en este dispositivo.</div>
+        </section>
+
+        <section class="workspace">
+          <div class="camera-panel panel">
+            <div class="panel-heading">
+              <div><span class="section-kicker">01 / CÁMARA</span><h3>Vista en vivo</h3></div>
+              <span class="live-indicator" id="cameraStatus">Cámara apagada</span>
+            </div>
+            <div class="camera-stage">
+              <video id="camera" autoplay playsinline muted></video>
+              <canvas id="overlay"></canvas>
+              <div class="camera-placeholder" id="placeholder">
+                <div class="camera-icon">◉</div>
+                <strong>La cámara aparecerá aquí</strong>
+                <span>Presiona “Iniciar cámara” para comenzar.</span>
+              </div>
+            </div>
+            <div class="camera-actions">
+              <button class="button button-primary" id="startButton">Iniciar cámara</button>
+              <button class="button button-secondary" id="stopButton" disabled>Detener</button>
+            </div>
+            <p class="hint" id="message" role="status">Al iniciar, el navegador solicitará permiso para usar la cámara.</p>
+          </div>
+
+          <aside class="results-column">
+            <article class="result-card panel">
+              <span class="section-kicker">02 / MANOS</span>
+              <h3>Gesto reconocido</h3>
+              <p class="result-value" id="gestureValue">—</p>
+              <p class="result-detail" id="handDetail">Esperando una mano frente a la cámara.</p>
+            </article>
+            <article class="result-card panel">
+              <span class="section-kicker">03 / ROSTRO</span>
+              <h3>Expresión visual</h3>
+              <p class="result-value" id="faceValue">—</p>
+              <p class="result-detail" id="faceDetail">Esperando un rostro.</p>
+            </article>
+            <article class="result-card panel">
+              <span class="section-kicker">04 / MOVIMIENTO</span>
+              <h3>Orientación de la cabeza</h3>
+              <p class="result-value" id="headValue">—</p>
+              <p class="result-detail" id="headDetail">Se estimará usando puntos faciales.</p>
+            </article>
+          </aside>
+        </section>
+
+        <section class="info-strip">
+          <div><span class="info-number">01</span><p><strong>Manos</strong><br />Clasificación de gestos comunes.</p></div>
+          <div><span class="info-number">02</span><p><strong>Rostro</strong><br />Detección de puntos y rasgos faciales.</p></div>
+          <div><span class="info-number">03</span><p><strong>Cabeza</strong><br />Estimación aproximada de orientación.</p></div>
+        </section>
+        <p class="disclaimer">Las expresiones son estimaciones visuales de movimientos faciales; no identifican emociones reales ni estados mentales.</p>
+      </main>
+      <footer>RECONOCIMIENTO DE GESTOS CON IA <span>Desarrollado con MediaPipe</span></footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
