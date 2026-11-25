@@ -90,6 +90,7 @@ async function startCamera() {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+    cameraStage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
     isRunning = true;
     lastVideoTime = -1;
     placeholder.hidden = true;
@@ -232,23 +233,48 @@ function drawConnections(points, connections, color, width) {
 
 function drawPoints(handResult, faceResult) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Manos: estructura completa, líneas gruesas y articulaciones muy visibles.
   for (const hand of handResult.landmarks || []) {
-    drawConnections(hand, HAND_CONNECTIONS, "rgba(182,154,255,0.95)", 2.2);
-    ctx.fillStyle = "#43e8ff";
-    for (const point of hand) {
+    drawConnections(hand, HAND_CONNECTIONS, "rgba(190,145,255,0.98)", 4);
+    for (let i = 0; i < hand.length; i++) {
+      const point = hand[i];
+      const x = point.x * canvas.width;
+      const y = point.y * canvas.height;
       ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 3.2, 0, Math.PI * 2);
+      ctx.arc(x, y, i === 0 ? 7 : 5.5, 0, Math.PI * 2);
+      ctx.fillStyle = "#a879ff";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#f4eaff";
       ctx.fill();
     }
   }
-  const faceConnections = FaceLandmarker.FACE_LANDMARKS_TESSELATION || [];
+
+  // Rostro: malla triangular completa más contornos de ojos, labios y cara.
+  const mesh = FaceLandmarker.FACE_LANDMARKS_TESSELATION || [];
+  const faceGroups = [
+    [FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, "#75f0b7", 3.2],
+    [FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, "#b5ff9b", 2.5],
+    [FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, "#b5ff9b", 2.5],
+    [FaceLandmarker.FACE_LANDMARKS_LIPS, "#75f0b7", 2.8],
+    [FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, "#75f0b7", 2.2],
+    [FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, "#75f0b7", 2.2]
+  ];
+
   for (const face of faceResult.faceLandmarks || []) {
-    drawConnections(face, faceConnections, "rgba(67,232,255,0.32)", 0.8);
-    ctx.fillStyle = "#b69aff";
-    for (let i = 0; i < face.length; i += 3) {
+    drawConnections(face, mesh, "rgba(110,240,185,0.48)", 1.15);
+    for (const [connections, color, width] of faceGroups) {
+      drawConnections(face, connections || [], color, width);
+    }
+
+    // Puntos más densos para que la malla se aprecie como en la referencia.
+    for (let i = 0; i < face.length; i += 2) {
       const point = face[i];
       ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 1.25, 0, Math.PI * 2);
+      ctx.arc(point.x * canvas.width, point.y * canvas.height, 2.15, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(174,255,214,0.9)";
       ctx.fill();
     }
   }
