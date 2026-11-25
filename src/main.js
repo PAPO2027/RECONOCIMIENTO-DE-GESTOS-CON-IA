@@ -54,6 +54,10 @@ const objectInputCanvas = document.createElement("canvas");
 objectInputCanvas.width = 640;
 objectInputCanvas.height = 480;
 const objectInputContext = objectInputCanvas.getContext("2d", { willReadFrequently: true });
+const faceObjectCanvas = document.createElement("canvas");
+faceObjectCanvas.width = 512;
+faceObjectCanvas.height = 512;
+const faceObjectContext = faceObjectCanvas.getContext("2d", { willReadFrequently: true });
 let animationId = null;
 let isRunning = false;
 let lastVideoTime = -1;
@@ -65,18 +69,17 @@ let latestObjectResult = { detections: [] };
 let smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
 const FACE_INTERVAL_MS = 66;
 const OBJECT_INTERVAL_MS = 220;
-const ZERO_SHOT_INTERVAL_MS = 1400;
+const ZERO_SHOT_INTERVAL_MS = 2200;
 const ZERO_SHOT_LABELS = [
-  "eyeglasses", "glasses", "spectacles", "optical glasses",
-  "a person wearing eyeglasses", "a person wearing glasses",
-  "sunglasses", "wireless earbuds", "earbuds charging case",
-  "headphones", "headphone case", "wallet", "keys", "pen", "pencil",
-  "notebook", "smartphone", "laptop", "tablet", "computer mouse",
-  "keyboard", "watch", "water bottle", "coffee mug", "charger",
-  "power bank", "remote control", "game controller", "scissors",
-  "umbrella", "shoe", "cap", "camera", "backpack", "handbag",
-  "book", "glasses case", "perfume bottle", "speaker", "calculator",
-  "sunglasses case", "coin purse", "flash drive", "stapler"
+  "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
+  "headphones", "wallet", "keys", "pen", "pencil", "notebook",
+  "smartphone", "laptop", "tablet", "computer mouse", "keyboard",
+  "watch", "water bottle", "coffee mug", "charger", "power bank",
+  "remote control", "game controller", "scissors", "umbrella",
+  "backpack", "handbag", "book", "camera", "calculator"
+];
+const FACE_ACCESSORY_LABELS = [
+  "eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"
 ];
 const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 const previousHandCenters = new Map();
@@ -236,7 +239,10 @@ function renderLoop() {
       latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
     }
 
-    const needsFace = isFeatureSelected("face") || isFeatureSelected("head") || isFeatureSelected("faceActions");
+    // También localizamos el rostro cuando se buscan objetos para ampliar la zona
+    // de análisis y detectar mejor accesorios pequeños como los lentes.
+    const needsFace = isFeatureSelected("face") || isFeatureSelected("head") ||
+      isFeatureSelected("faceActions") || isFeatureSelected("objects");
     if (needsFace && timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
       latestFaceResult = faceLandmarker.detectForVideo(video, timestamp);
       lastFaceDetectionTime = timestamp;
@@ -416,31 +422,100 @@ async function runZeroShotObjectDetection(timestamp) {
   zeroShotBusy = true;
   lastZeroShotDetectionTime = timestamp;
   try {
+    const frameWidth = video.videoWidth;
+    const frameHeight = video.videoHeight;
+    if (!frameWidth || !frameHeight) return;
+
+    // Primera pasada: objetos cotidianos en toda la imagen.
     objectInputContext.drawImage(video, 0, 0, objectInputCanvas.width, objectInputCanvas.height);
-    const predictions = await zeroShotObjectDetector(
+    const generalPredictions = await zeroShotObjectDetector(
       objectInputCanvas,
       ZERO_SHOT_LABELS,
-      { threshold: 0.035, top_k: 30 }
+      { threshold: 0.07, top_k: 18 }
     );
     if (!isRunning || !isFeatureSelected("objects")) return;
-    const scaleX = video.videoWidth / objectInputCanvas.width;
-    const scaleY = video.videoHeight / objectInputCanvas.height;
-    latestZeroShotDetections = (predictions || []).map(item => ({
+
+    const scaleX = frameWidth / objectInputCanvas.width;
+    const scaleY = frameHeight / objectInputCanvas.height;
+    const mappedGeneral = (generalPredictions || []).map(item => ({
       boundingBox: {
         originX: item.box.xmin * scaleX,
         originY: item.box.ymin * scaleY,
         width: (item.box.xmax - item.box.xmin) * scaleX,
         height: (item.box.ymax - item.box.ymin) * scaleY
       },
-      categories: [{
-        categoryName: item.label,
-        score: item.score
-      }]
+      categories: [{ categoryName: item.label, score: item.score }]
     }));
+
+    // Segunda pasada: recortamos el rostro para que los lentes ocupen más píxeles.
+    const face = latestFaceResult.faceLandmarks?.[0];
+    let mappedFaceAccessories = [];
+    if (face?.length) {
+      const xs = face.map(point => point.x * frameWidth);
+      const ys = face.map(point => point.y * frameHeight);
+      const faceLeft = Math.max(0, Math.min(...xs));
+      const faceRight = Math.min(frameWidth, Math.max(...xs));
+      const faceTop = Math.max(0, Math.min(...ys));
+      const faceBottom = Math.min(frameHeight, Math.max(...ys));
+      const faceWidth = faceRight - faceLeft;
+      const faceHeight = faceBottom - faceTop;
+      if (faceWidth > 30 && faceHeight > 30) {
+        const padX = faceWidth * 0.22;
+        const padY = faceHeight * 0.22;
+        const cropX = Math.max(0, faceLeft - padX);
+        const cropY = Math.max(0, faceTop - padY);
+        const cropRight = Math.min(frameWidth, faceRight + padX);
+        const cropBottom = Math.min(frameHeight, faceBottom + padY);
+        const cropWidth = cropRight - cropX;
+        const cropHeight = cropBottom - cropY;
+        faceObjectContext.clearRect(0, 0, faceObjectCanvas.width, faceObjectCanvas.height);
+        faceObjectContext.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0,
+          faceObjectCanvas.width, faceObjectCanvas.height);
+        const accessoryPredictions = await zeroShotObjectDetector(
+          faceObjectCanvas,
+          FACE_ACCESSORY_LABELS,
+          { threshold: 0.045, top_k: 8 }
+        );
+        if (!isRunning || !isFeatureSelected("objects")) return;
+        const faceScaleX = cropWidth / faceObjectCanvas.width;
+        const faceScaleY = cropHeight / faceObjectCanvas.height;
+        mappedFaceAccessories = (accessoryPredictions || []).map(item => ({
+          boundingBox: {
+            originX: cropX + item.box.xmin * faceScaleX,
+            originY: cropY + item.box.ymin * faceScaleY,
+            width: (item.box.xmax - item.box.xmin) * faceScaleX,
+            height: (item.box.ymax - item.box.ymin) * faceScaleY
+          },
+          categories: [{ categoryName: item.label, score: item.score }]
+        }));
+      }
+    }
+
+    // Evita mostrar simultáneamente dos etiquetas casi idénticas sobre la misma zona.
+    const combined = [...mappedFaceAccessories, ...mappedGeneral];
+    latestZeroShotDetections = combined.filter((item, index) => {
+      const label = item.categories[0].categoryName;
+      const box = item.boundingBox;
+      const duplicate = combined.slice(0, index).some(previous => {
+        const p = previous.boundingBox;
+        const sameFamily = ["eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"]
+          .includes(label) && ["eyeglasses", "glasses", "spectacles", "optical glasses", "sunglasses"]
+          .includes(previous.categories[0].categoryName);
+        if (!sameFamily) return false;
+        const intersectionW = Math.max(0, Math.min(box.originX + box.width, p.originX + p.width) - Math.max(box.originX, p.originX));
+        const intersectionH = Math.max(0, Math.min(box.originY + box.height, p.originY + p.height) - Math.max(box.originY, p.originY));
+        const intersection = intersectionW * intersectionH;
+        const union = box.width * box.height + p.width * p.height - intersection;
+        return union > 0 && intersection / union > 0.45;
+      });
+      return !duplicate;
+    });
+
     latestObjectResult = { detections: [...latestBaseObjectDetections, ...latestZeroShotDetections] };
     showObjects(latestObjectResult);
   } catch (error) {
     console.error("Error al detectar objetos con OWL-ViT:", error);
+    objectDetail.textContent = "Error en el modelo adicional: " + (error?.message || "revisa la consola del navegador");
   } finally {
     zeroShotBusy = false;
   }
@@ -487,7 +562,7 @@ function translateObject(label) {
     clock:"reloj", vase:"florero", scissors:"tijeras", teddy_bear:"oso de peluche",
     hair_drier:"secadora de cabello", toothbrush:"cepillo de dientes",
     // Etiquetas disponibles si se carga un modelo personalizado entrenado para ellas
-    glasses:"lentes", eyeglasses:"lentes", sunglasses:"gafas de sol",
+    glasses:"lentes", eyeglasses:"lentes", spectacles:"lentes", "optical glasses":"lentes", sunglasses:"gafas de sol",
     "wireless earbuds":"audífonos inalámbricos", "earbuds charging case":"estuche de audífonos",
     headphones:"audífonos", "headphone case":"estuche de audífonos",
     "glasses case":"estuche de lentes", "sunglasses case":"estuche de gafas",
