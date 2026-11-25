@@ -482,7 +482,7 @@ async function runZeroShotObjectDetection(timestamp) {
     }
 
     // La búsqueda general se ejecuta con menor frecuencia para reducir carga.
-    if (timestamp - lastGeneralZeroShotTime >= GENERAL_ZERO_SHOT_INTERVAL_MS || !latestGeneralZeroShotDetections.length) {
+    if (timestamp - lastGeneralZeroShotTime >= GENERAL_ZERO_SHOT_INTERVAL_MS) {
       objectInputContext.drawImage(video, 0, 0, objectInputCanvas.width, objectInputCanvas.height);
       const generalPredictions = await zeroShotObjectDetector(
         objectInputCanvas,
