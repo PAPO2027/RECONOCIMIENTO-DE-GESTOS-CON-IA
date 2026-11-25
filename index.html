@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#070b16" />
-    <meta name="description" content="Reconocimiento facial y de gestos de manos con inteligencia artificial en tiempo real." />
+    <meta name="description" content="Reconocimiento de manos, rostro, orientación de cabeza y objetos con inteligencia artificial." />
     <title>Reconocimiento Facial y Manos | IA</title>
   </head>
   <body>
@@ -76,17 +76,43 @@
             <article class="data-card glass-panel">
               <div class="data-card-heading"><span class="data-icon head-icon">⌁</span><div><h3>Movimiento de cabeza</h3><p>ORIENTACIÓN APROXIMADA</p></div><span class="card-number">03</span></div>
               <div class="data-result" id="headValue">Esperando...</div>
-              <p class="data-description" id="headDetail">Se estimará si la cabeza está de frente o girada.</p>
+              <p class="data-description" id="headDetail">Se estimará la orientación de la cabeza.</p>
+              <div class="head-visual-wrap"><div class="head-3d" id="headModel"><span class="head-eye left"></span><span class="head-eye right"></span><span class="head-nose"></span><span class="head-mouth"></span></div><span class="head-axis">ROTACIÓN 3D</span></div>
+            </article>
+
+            <article class="data-card glass-panel">
+              <div class="data-card-heading"><span class="data-icon">◉</span><div><h3>Detección de objetos</h3><p>OBJETOS COTIDIANOS</p></div><span class="card-number">04</span></div>
+              <div class="data-result" id="objectValue">Esperando...</div>
+              <p class="data-description" id="objectDetail">El modelo general buscará objetos conocidos en la cámara.</p>
+            </article>
+
+            <article class="data-card glass-panel">
+              <div class="data-card-heading"><span class="data-icon face-icon">◌</span><div><h3>Acciones faciales</h3><p>PARPADEO Y GUIÑOS</p></div><span class="card-number">05</span></div>
+              <div class="data-result" id="faceActionValue">Esperando...</div>
+              <p class="data-description" id="faceActionDetail">Se analizarán movimientos visibles de los ojos y la boca.</p>
             </article>
           </aside>
+        </section>
+
+        <section class="custom-model-section glass-panel">
+          <div>
+            <p class="section-index">04 — ENTRENAMIENTO PERSONALIZADO</p>
+            <h2>Agregar un modelo propio</h2>
+            <p class="custom-model-copy">Cuando entrenes un detector de objetos compatible con MediaPipe, carga aquí su archivo .tflite. El modelo se ejecutará en tu navegador.</p>
+          </div>
+          <div class="custom-model-controls">
+            <input id="customModelInput" type="file" accept=".tflite" hidden />
+            <button class="button button-primary" id="customModelButton">CARGAR MODELO .TFLITE</button>
+            <span class="custom-model-note">Los modelos personalizados necesitan entrenamiento previo y metadatos compatibles.</span>
+          </div>
         </section>
 
         <section class="legend-section">
           <div class="legend-title"><p class="section-index">03 — ¿QUÉ ANALIZA EL SISTEMA?</p><h2>Componentes del escáner</h2></div>
           <div class="legend-grid">
-            <article class="legend-card"><span class="legend-symbol">✋</span><div><h3>Manos</h3><p>Reconoce gestos comunes y muestra su nombre en español.</p></div></article>
+            <article class="legend-card"><span class="legend-symbol">✋</span><div><h3>Manos</h3><p>Reconoce gestos comunes y estima qué dedos están levantados.</p></div></article>
             <article class="legend-card"><span class="legend-symbol">◎</span><div><h3>Rostro</h3><p>Detecta la presencia del rostro y observa puntos faciales.</p></div></article>
-            <article class="legend-card"><span class="legend-symbol">⌁</span><div><h3>Cabeza</h3><p>Calcula de forma aproximada hacia dónde está orientada.</p></div></article>
+            <article class="legend-card"><span class="legend-symbol">⌁</span><div><h3>Cabeza</h3><p>Muestra giros en tres ejes y una vista 3D orientativa.</p></div></article>
           </div>
         </section>
         <p class="privacy-note"><span>◆</span> PRIVACIDAD: el video se procesa en tu navegador. Esta página no graba ni guarda imágenes. Las expresiones son estimaciones visuales y no identifican emociones reales.</p>
