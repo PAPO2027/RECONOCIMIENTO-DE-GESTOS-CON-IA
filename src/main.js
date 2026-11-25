@@ -51,8 +51,8 @@ let lastZeroShotDetectionTime = 0;
 let latestBaseObjectDetections = [];
 let latestZeroShotDetections = [];
 const objectInputCanvas = document.createElement("canvas");
-objectInputCanvas.width = 320;
-objectInputCanvas.height = 240;
+objectInputCanvas.width = 640;
+objectInputCanvas.height = 480;
 const objectInputContext = objectInputCanvas.getContext("2d", { willReadFrequently: true });
 let animationId = null;
 let isRunning = false;
@@ -67,7 +67,9 @@ const FACE_INTERVAL_MS = 66;
 const OBJECT_INTERVAL_MS = 220;
 const ZERO_SHOT_INTERVAL_MS = 1400;
 const ZERO_SHOT_LABELS = [
-  "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
+  "eyeglasses", "glasses", "spectacles", "optical glasses",
+  "a person wearing eyeglasses", "a person wearing glasses",
+  "sunglasses", "wireless earbuds", "earbuds charging case",
   "headphones", "headphone case", "wallet", "keys", "pen", "pencil",
   "notebook", "smartphone", "laptop", "tablet", "computer mouse",
   "keyboard", "watch", "water bottle", "coffee mug", "charger",
@@ -178,6 +180,10 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await video.play();
+    // Mantiene la imagen de entrada del segundo modelo a resolución nativa:
+    // los lentes ocupan pocos píxeles y se pierden al reducir la cámara a 320x240.
+    objectInputCanvas.width = video.videoWidth || 640;
+    objectInputCanvas.height = video.videoHeight || 480;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     cameraStage.style.aspectRatio = video.videoWidth + " / " + video.videoHeight;
@@ -414,7 +420,7 @@ async function runZeroShotObjectDetection(timestamp) {
     const predictions = await zeroShotObjectDetector(
       objectInputCanvas,
       ZERO_SHOT_LABELS,
-      { threshold: 0.075, top_k: 20 }
+      { threshold: 0.035, top_k: 30 }
     );
     if (!isRunning || !isFeatureSelected("objects")) return;
     const scaleX = video.videoWidth / objectInputCanvas.width;
