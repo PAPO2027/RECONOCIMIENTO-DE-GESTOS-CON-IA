@@ -27,6 +27,10 @@ const customModelInput = $("#customModelInput");
 const customModelButton = $("#customModelButton");
 const customGestureInput = $("#customGestureInput");
 const customGestureButton = $("#customGestureButton");
+const featureInputs = [...document.querySelectorAll("[data-feature]")];
+const featureCards = [...document.querySelectorAll("[data-feature-card]")];
+const selectionSummary = $("#selectionSummary");
+const selectedFeatures = new Set(featureInputs.filter(input => input.checked).map(input => input.dataset.feature));
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODELS = {
@@ -62,6 +66,32 @@ const gestureNames = {
   Victory: "Señal de victoria",
   ILoveYou: "Señal te quiero"
 };
+
+function isFeatureSelected(name) { return selectedFeatures.has(name); }
+
+function updateFeatureSelection() {
+  selectedFeatures.clear();
+  featureInputs.forEach(input => {
+    if (input.checked) selectedFeatures.add(input.dataset.feature);
+  });
+  featureCards.forEach(card => {
+    card.hidden = !isFeatureSelected(card.dataset.featureCard);
+  });
+  selectionSummary.textContent = selectedFeatures.size + (selectedFeatures.size === 1 ? " función seleccionada" : " funciones seleccionadas");
+  if (!selectedFeatures.size) setMessage("Selecciona al menos una función para iniciar el escáner.", true);
+  else if (!isRunning) setMessage("Configuración lista. Puedes activar una o varias funciones.");
+}
+
+featureInputs.forEach(input => input.addEventListener("change", updateFeatureSelection));
+$("#selectAllFeatures").addEventListener("click", () => {
+  featureInputs.forEach(input => { input.checked = true; });
+  updateFeatureSelection();
+});
+$("#clearFeatures").addEventListener("click", () => {
+  featureInputs.forEach(input => { input.checked = false; });
+  updateFeatureSelection();
+});
+updateFeatureSelection();
 
 function setMessage(text, isError = false) {
   message.textContent = text;
@@ -167,13 +197,13 @@ function renderLoop() {
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const timestamp = performance.now();
-    latestHandResult = gestureRecognizer.recognizeForVideo(video, timestamp);
+    if (isFeatureSelected("hands")) latestHandResult = gestureRecognizer.recognizeForVideo(video, timestamp);\n    else latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
     if (timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
       latestFaceResult = faceLandmarker.detectForVideo(video, timestamp);
       lastFaceDetectionTime = timestamp;
       showFace(latestFaceResult);
     }
-    if (timestamp - lastObjectDetectionTime >= OBJECT_INTERVAL_MS) {
+    if (isFeatureSelected("objects") && timestamp - lastObjectDetectionTime >= OBJECT_INTERVAL_MS) {
       latestObjectResult = objectDetector.detectForVideo(video, timestamp);
       lastObjectDetectionTime = timestamp;
       showObjects(latestObjectResult);
@@ -267,7 +297,7 @@ function showFace(result) {
   else if (mouthOpen > 0.55) action = "Boca abierta";
   faceActionValue.textContent = action;
   faceActionDetail.textContent = "Ojo izq. " + Math.round(blinkLeft*100) + "% · Ojo der. " + Math.round(blinkRight*100) + "% · Boca " + Math.round(mouthOpen*100) + "%";
-  updateHeadPose(result.facialTransformationMatrixes?.[0]);
+  if (isFeatureSelected("head")) updateHeadPose(result.facialTransformationMatrixes?.[0]);\n  else { headValue.textContent = "Desactivado"; headDetail.textContent = "Activa Movimiento de cabeza en la configuración."; headModel.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)"; }\n  if (!isFeatureSelected("face")) { faceValue.textContent = "Desactivado"; faceDetail.textContent = "Activa Rostro en la configuración."; }\n  if (isFeatureSelected("faceActions")) { /* acciones faciales ya calculadas arriba */ }\n  else { faceActionValue.textContent = "Desactivado"; faceActionDetail.textContent = "Activa Acciones faciales en la configuración."; }
 }
 
 function updateHeadPose(matrix) {
@@ -357,7 +387,7 @@ function drawPoints(handResult, faceResult, objectResult) {
     }
   }
   const mesh = FaceLandmarker.FACE_LANDMARKS_TESSELATION || [];
-  for (const face of faceResult.faceLandmarks || []) {
+  for (const face of (isFeatureSelected("face") ? faceResult.faceLandmarks : []) || []) {
     drawConnections(face, mesh, "rgba(110,240,185,0.42)", 1);
     for (let i = 0; i < face.length; i += 3) {
       const point = face[i];
@@ -367,7 +397,7 @@ function drawPoints(handResult, faceResult, objectResult) {
       ctx.fill();
     }
   }
-  for (const detection of objectResult.detections || []) {
+  for (const detection of (isFeatureSelected("objects") ? objectResult.detections : []) || []) {
     const box = detection.boundingBox;
     if (!box) continue;
     ctx.strokeStyle = "#43e8ff";
