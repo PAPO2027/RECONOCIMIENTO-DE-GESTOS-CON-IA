@@ -120,7 +120,7 @@ async function loadModels() {
       baseOptions: { modelAssetPath: MODELS.objects, delegate },
       runningMode: "VIDEO",
       scoreThreshold: 0.45,
-      maxResults: 8
+      maxResults: 20
     });
     return { gesture, face, objects };
   }
@@ -345,30 +345,56 @@ function updateHeadPose(matrix) {
 }
 
 function showObjects(result) {
-  const detections = result.detections || [];
+  // La sección de objetos ignora personas; el reconocimiento facial sigue funcionando por separado.
+  const detections = (result.detections || []).filter(item =>
+    (item.categories?.[0]?.categoryName || "").toLowerCase() !== "person"
+  );
   if (!detections.length) {
     objectValue.textContent = "Sin objetos detectados";
-    objectDetail.textContent = "El detector general busca objetos de 80 categorías conocidas.";
+    objectDetail.textContent = "Busca objetos cotidianos; las personas se excluyen de esta sección.";
     return;
   }
-  const labels = detections.slice(0, 5).map(item => {
+  const labels = detections.slice(0, 10).map(item => {
     const category = item.categories?.[0];
     return translateObject(category?.categoryName || "Objeto") + " (" + Math.round((category?.score || 0) * 100) + "%)";
   });
   objectValue.textContent = labels.join(" · ");
-  objectDetail.textContent = detections.length + " detección(es) encontradas en la cámara.";
+  objectDetail.textContent = detections.length + " objeto(s) detectado(s).";
 }
 
 function translateObject(label) {
   const names = {
-    person:"persona", bicycle:"bicicleta", car:"auto", motorcycle:"motocicleta", airplane:"avión",
-    bus:"autobús", train:"tren", truck:"camión", boat:"barco", bottle:"botella", cup:"taza",
-    chair:"silla", couch:"sofá", laptop:"computadora", cell_phone:"celular", book:"libro",
-    backpack:"mochila", tv:"televisor", keyboard:"teclado", mouse:"ratón", apple:"manzana",
-    banana:"plátano", orange:"naranja", dog:"perro", cat:"gato", remote:"control remoto",
-    scissors:"tijeras", clock:"reloj", sports_ball:"pelota", potted_plant:"planta"
+    // Categorías habituales del modelo COCO
+    bicycle:"bicicleta", car:"auto", motorcycle:"motocicleta", airplane:"avión",
+    bus:"autobús", train:"tren", truck:"camión", boat:"barco", traffic_light:"semáforo",
+    fire_hydrant:"hidrante", stop_sign:"señal de pare", parking_meter:"parquímetro",
+    bench:"banca", bird:"pájaro", cat:"gato", dog:"perro", horse:"caballo", sheep:"oveja",
+    cow:"vaca", elephant:"elefante", bear:"oso", zebra:"cebra", giraffe:"jirafa",
+    backpack:"mochila", umbrella:"paraguas", handbag:"bolso", tie:"corbata", suitcase:"maleta",
+    frisbee:"frisbi", skis:"esquís", snowboard:"tabla de snowboard", sports_ball:"pelota",
+    kite:"cometa", baseball_bat:"bate de béisbol", baseball_glove:"guante de béisbol",
+    skateboard:"patineta", surfboard:"tabla de surf", tennis_racket:"raqueta de tenis",
+    bottle:"botella", wine_glass:"copa", cup:"taza", fork:"tenedor", knife:"cuchillo",
+    spoon:"cuchara", bowl:"tazón", banana:"plátano", apple:"manzana", sandwich:"sándwich",
+    orange:"naranja", broccoli:"brócoli", carrot:"zanahoria", hot_dog:"perro caliente",
+    pizza:"pizza", donut:"dona", cake:"pastel", chair:"silla", couch:"sofá",
+    potted_plant:"planta", bed:"cama", dining_table:"mesa", toilet:"inodoro",
+    tv:"televisor", laptop:"computadora portátil", mouse:"ratón", remote:"control remoto",
+    keyboard:"teclado", cell_phone:"celular", microwave:"microondas", oven:"horno",
+    toaster:"tostadora", sink:"lavamanos", refrigerator:"refrigeradora", book:"libro",
+    clock:"reloj", vase:"florero", scissors:"tijeras", teddy_bear:"oso de peluche",
+    hair_drier:"secadora de cabello", toothbrush:"cepillo de dientes",
+    // Etiquetas disponibles si se carga un modelo personalizado entrenado para ellas
+    glasses:"lentes", eyeglasses:"lentes", sunglasses:"gafas de sol",
+    headphones:"audífonos", earbuds:"audífonos inalámbricos",
+    wireless_earbuds:"audífonos inalámbricos", airpods:"audífonos inalámbricos",
+    earbud_case:"estuche de audífonos", headphones_case:"estuche de audífonos",
+    wallet:"billetera", keys:"llaves", key:"llave", pen:"esfero", pencil:"lápiz",
+    notebook:"cuaderno", stapler:"grapadora", remote_control:"control remoto",
+    charger:"cargador", power_bank:"batería portátil", watch:"reloj", monitor:"monitor",
+    tablet:"tableta", game_controller:"control de videojuegos"
   };
-  return names[label] || label.replaceAll("_", " ");
+  return names[label.toLowerCase()] || label.replaceAll("_", " ");
 }
 
 function drawConnections(points, connections, color, width) {
@@ -412,7 +438,9 @@ function drawPoints(handResult, faceResult, objectResult) {
       ctx.fill();
     }
   }
-  for (const detection of (isFeatureSelected("objects") ? objectResult.detections : []) || []) {
+  for (const detection of (isFeatureSelected("objects") ? objectResult.detections : []).filter(item =>
+    (item.categories?.[0]?.categoryName || "").toLowerCase() !== "person"
+  )) {
     const box = detection.boundingBox;
     if (!box) continue;
     ctx.strokeStyle = "#43e8ff";
