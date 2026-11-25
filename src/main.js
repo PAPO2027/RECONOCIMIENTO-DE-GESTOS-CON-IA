@@ -71,9 +71,10 @@ let latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransform
 let latestObjectResult = { detections: [] };
 let smoothedHeadAngles = { yaw: 0, pitch: 0, roll: 0 };
 const FACE_INTERVAL_MS = 66;
-const OBJECT_INTERVAL_MS = 220;
-const ZERO_SHOT_INTERVAL_MS = 1700;
-const GENERAL_ZERO_SHOT_INTERVAL_MS = 7000;
+const OBJECT_FACE_INTERVAL_MS = 300;
+const OBJECT_INTERVAL_MS = 450;
+const ZERO_SHOT_INTERVAL_MS = 2400;
+const GENERAL_ZERO_SHOT_INTERVAL_MS = 12000;
 const ZERO_SHOT_LABELS = [
   "eyeglasses", "sunglasses", "wireless earbuds", "earbuds charging case",
   "headphones", "wallet", "keys", "pen", "pencil", "notebook",
@@ -245,9 +246,11 @@ function renderLoop() {
 
     // También localizamos el rostro cuando se buscan objetos para ampliar la zona
     // de análisis y detectar mejor accesorios pequeños como los lentes.
-    const needsFace = isFeatureSelected("face") || isFeatureSelected("head") ||
-      isFeatureSelected("faceActions") || isFeatureSelected("objects");
-    if (needsFace && timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
+    const needsDedicatedFace = isFeatureSelected("face") || isFeatureSelected("head") ||
+      isFeatureSelected("faceActions");
+    const needsFace = needsDedicatedFace || isFeatureSelected("objects");
+    const faceInterval = needsDedicatedFace ? FACE_INTERVAL_MS : OBJECT_FACE_INTERVAL_MS;
+    if (needsFace && timestamp - lastFaceDetectionTime >= faceInterval) {
       latestFaceResult = faceLandmarker.detectForVideo(video, timestamp);
       lastFaceDetectionTime = timestamp;
       showFace(latestFaceResult);
