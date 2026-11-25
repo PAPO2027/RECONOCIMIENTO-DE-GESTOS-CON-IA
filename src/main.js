@@ -197,16 +197,27 @@ function renderLoop() {
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const timestamp = performance.now();
-    if (isFeatureSelected("hands")) latestHandResult = gestureRecognizer.recognizeForVideo(video, timestamp);\n    else latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
-    if (timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
+    if (isFeatureSelected("hands")) {
+      latestHandResult = gestureRecognizer.recognizeForVideo(video, timestamp);
+    } else {
+      latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
+    }
+
+    const needsFace = isFeatureSelected("face") || isFeatureSelected("head") || isFeatureSelected("faceActions");
+    if (needsFace && timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
       latestFaceResult = faceLandmarker.detectForVideo(video, timestamp);
       lastFaceDetectionTime = timestamp;
       showFace(latestFaceResult);
+    } else if (!needsFace) {
+      latestFaceResult = { faceLandmarks: [], faceBlendshapes: [], facialTransformationMatrixes: [] };
     }
+
     if (isFeatureSelected("objects") && timestamp - lastObjectDetectionTime >= OBJECT_INTERVAL_MS) {
       latestObjectResult = objectDetector.detectForVideo(video, timestamp);
       lastObjectDetectionTime = timestamp;
       showObjects(latestObjectResult);
+    } else if (!isFeatureSelected("objects")) {
+      latestObjectResult = { detections: [] };
     }
     showHands(latestHandResult);
     drawPoints(latestHandResult, latestFaceResult, latestObjectResult);
@@ -297,7 +308,11 @@ function showFace(result) {
   else if (mouthOpen > 0.55) action = "Boca abierta";
   faceActionValue.textContent = action;
   faceActionDetail.textContent = "Ojo izq. " + Math.round(blinkLeft*100) + "% · Ojo der. " + Math.round(blinkRight*100) + "% · Boca " + Math.round(mouthOpen*100) + "%";
-  if (isFeatureSelected("head")) updateHeadPose(result.facialTransformationMatrixes?.[0]);\n  else { headValue.textContent = "Desactivado"; headDetail.textContent = "Activa Movimiento de cabeza en la configuración."; headModel.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)"; }\n  if (!isFeatureSelected("face")) { faceValue.textContent = "Desactivado"; faceDetail.textContent = "Activa Rostro en la configuración."; }\n  if (isFeatureSelected("faceActions")) { /* acciones faciales ya calculadas arriba */ }\n  else { faceActionValue.textContent = "Desactivado"; faceActionDetail.textContent = "Activa Acciones faciales en la configuración."; }
+  if (isFeatureSelected("head")) updateHeadPose(result.facialTransformationMatrixes?.[0]);
+  else { headValue.textContent = "Desactivado"; headDetail.textContent = "Activa Movimiento de cabeza en la configuración."; headModel.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)"; }
+  if (!isFeatureSelected("face")) { faceValue.textContent = "Desactivado"; faceDetail.textContent = "Activa Rostro en la configuración."; }
+  if (isFeatureSelected("faceActions")) { /* acciones faciales ya calculadas arriba */ }
+  else { faceActionValue.textContent = "Desactivado"; faceActionDetail.textContent = "Activa Acciones faciales en la configuración."; }
 }
 
 function updateHeadPose(matrix) {
