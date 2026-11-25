@@ -29,6 +29,10 @@ let gestureRecognizer = null;
 let faceLandmarker = null;
 let animationId = null;
 let lastVideoTime = -1;
+let lastFaceDetectionTime = 0;
+let latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
+let latestFaceResult = { faceLandmarks: [], faceBlendshapes: [] };
+const FACE_INTERVAL_MS = 66;
 let isRunning = false;
 const previousHandCenters = new Map();
 let previousFrameTime = 0;
@@ -50,26 +54,38 @@ function setMessage(text, isError = false) {
 }
 
 async function loadModels() {
-  setMessage("Preparando inteligencia artificial. La primera carga puede tardar unos segundos.");
+  setMessage("Preparando inteligencia artificial y aceleración gráfica...");
   appStatus.textContent = "CARGANDO MODELOS";
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
 
-  [gestureRecognizer, faceLandmarker] = await Promise.all([
-    GestureRecognizer.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODELS.gesture, delegate: "CPU" },
-      runningMode: "VIDEO",
-      numHands: 2
-    }),
-    FaceLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODELS.face, delegate: "CPU" },
-      runningMode: "VIDEO",
-      numFaces: 1,
-      outputFaceBlendshapes: true,
-      outputFacialTransformationMatrixes: true
-    })
-  ]);
+  const createModels = async (delegate) => {
+    const [gesture, face] = await Promise.all([
+      GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODELS.gesture, delegate },
+        runningMode: "VIDEO",
+        numHands: 2
+      }),
+      FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODELS.face, delegate },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFaceBlendshapes: true,
+        outputFacialTransformationMatrixes: false
+      })
+    ]);
+    return [gesture, face];
+  };
+
+  // GPU evita bloquear tanto el hilo principal. Si no está disponible, usa CPU.
+  try {
+    [gestureRecognizer, faceLandmarker] = await createModels("GPU");
+    console.info("MediaPipe ejecutándose con aceleración GPU.");
+  } catch (gpuError) {
+    console.warn("GPU no disponible; se utilizará CPU.", gpuError);
+    [gestureRecognizer, faceLandmarker] = await createModels("CPU");
+  }
 }
 
 async function startCamera() {
@@ -83,7 +99,7 @@ async function startCamera() {
 
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } }
     });
     video.srcObject = stream;
     await video.play();
@@ -93,6 +109,9 @@ async function startCamera() {
     cameraStage.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
     isRunning = true;
     lastVideoTime = -1;
+    lastFaceDetectionTime = 0;
+    latestHandResult = { gestures: [], handednesses: [], landmarks: [] };
+    latestFaceResult = { faceLandmarks: [], faceBlendshapes: [] };
     placeholder.hidden = true;
     cameraStage.classList.add("scanning");
     stopButton.disabled = false;
@@ -120,15 +139,24 @@ async function startCamera() {
 
 function renderLoop() {
   if (!isRunning) return;
+
   if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const timestamp = performance.now();
-    const handResult = gestureRecognizer.recognizeForVideo(video, timestamp);
-    const faceResult = faceLandmarker.detectForVideo(video, timestamp);
-    showHands(handResult);
-    showFace(faceResult);
-    drawPoints(handResult, faceResult);
+
+    // Las manos se actualizan en cada ciclo; el rostro se analiza a 15 FPS
+    // para reducir carga sin dejar de mostrar una malla fluida.
+    latestHandResult = gestureRecognizer.recognizeForVideo(video, timestamp);
+    if (timestamp - lastFaceDetectionTime >= FACE_INTERVAL_MS) {
+      latestFaceResult = faceLandmarker.detectForVideo(video, timestamp);
+      lastFaceDetectionTime = timestamp;
+      showFace(latestFaceResult);
+    }
+
+    showHands(latestHandResult);
+    drawPoints(latestHandResult, latestFaceResult);
   }
+
   animationId = requestAnimationFrame(renderLoop);
 }
 
