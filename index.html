@@ -3,83 +3,95 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Aplicación web para reconocer gestos de manos y analizar puntos faciales con inteligencia artificial." />
-    <meta name="theme-color" content="#101827" />
-    <title>Reconocimiento de Gestos con IA</title>
+    <meta name="theme-color" content="#070b16" />
+    <meta name="description" content="Reconocimiento facial y de gestos de manos con inteligencia artificial en tiempo real." />
+    <title>Reconocimiento Facial y Manos | IA</title>
   </head>
   <body>
+    <div class="page-grid"></div>
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand-mark">IA</div>
-        <div>
-          <p class="eyebrow">PROYECTO DE INTELIGENCIA ARTIFICIAL</p>
-          <h1>Reconocimiento de Gestos</h1>
-        </div>
-        <span class="status-pill" id="appStatus">En espera</span>
+        <a class="brand" href="#" aria-label="Inicio">
+          <span class="brand-icon"><span></span><span></span><span></span><span></span></span>
+          <span class="brand-name">NEURO<span>VISION</span><small>AI SCANNER / 01</small></span>
+        </a>
+        <div class="top-status"><span class="status-light"></span><span id="appStatus">SISTEMA EN ESPERA</span></div>
       </header>
 
       <main>
-        <section class="intro">
-          <div>
-            <p class="eyebrow">ANÁLISIS EN TIEMPO REAL</p>
-            <h2>Interactúa con la cámara</h2>
-            <p class="intro-copy">La aplicación identifica gestos de manos y analiza puntos de referencia del rostro directamente en tu navegador.</p>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow"><span></span> SISTEMA DE VISIÓN ARTIFICIAL</p>
+            <h1>RECONOCIMIENTO<br /><em>FACIAL Y MANOS</em></h1>
+            <p class="hero-description">Explora el reconocimiento de gestos y rasgos faciales mediante inteligencia artificial. Activa tu cámara y observa el análisis en tiempo real.</p>
+            <div class="hero-tags"><span>IA EN TIEMPO REAL</span><span>MEDIAPIPE</span><span>PROCESAMIENTO LOCAL</span></div>
           </div>
-          <div class="privacy-note"><span class="privacy-dot"></span> El video se procesa en este dispositivo.</div>
+          <div class="hero-orbit" aria-hidden="true">
+            <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+            <div class="orbit-core"><span>AI</span><i></i></div>
+            <b class="orbit-label label-top">VISION / 01</b><b class="orbit-label label-bottom">ANÁLISIS ACTIVO</b>
+          </div>
         </section>
 
-        <section class="workspace">
-          <div class="camera-panel panel">
-            <div class="panel-heading">
-              <div><span class="section-kicker">01 / CÁMARA</span><h3>Vista en vivo</h3></div>
-              <span class="live-indicator" id="cameraStatus">Cámara apagada</span>
+        <section class="scanner-layout">
+          <div class="camera-panel glass-panel">
+            <div class="panel-top">
+              <div><p class="section-index">01 — CAPTURA</p><h2>Escáner visual</h2></div>
+              <div class="camera-state" id="cameraStatus"><span></span> CÁMARA APAGADA</div>
             </div>
             <div class="camera-stage">
               <video id="camera" autoplay playsinline muted></video>
               <canvas id="overlay"></canvas>
+              <div class="scan-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+              <div class="scan-line" aria-hidden="true"></div>
               <div class="camera-placeholder" id="placeholder">
-                <div class="camera-icon">◉</div>
-                <strong>La cámara aparecerá aquí</strong>
-                <span>Presiona “Iniciar cámara” para comenzar.</span>
+                <div class="placeholder-symbol"><span></span><span></span><span></span><span></span></div>
+                <strong>ESPERANDO SEÑAL DE VIDEO</strong>
+                <p>Presiona el botón para activar la cámara de tu dispositivo.</p>
               </div>
+              <div class="video-label">CAM 01 <span>● LIVE FEED</span></div>
             </div>
-            <div class="camera-actions">
-              <button class="button button-primary" id="startButton">Iniciar cámara</button>
-              <button class="button button-secondary" id="stopButton" disabled>Detener</button>
+            <div class="camera-controls">
+              <button class="button button-primary" id="startButton"><span class="button-icon">▶</span> INICIAR ESCÁNER</button>
+              <button class="button button-stop" id="stopButton" disabled>■ DETENER</button>
             </div>
-            <p class="hint" id="message" role="status">Al iniciar, el navegador solicitará permiso para usar la cámara.</p>
+            <p class="system-message" id="message" role="status">El sistema solicitará permiso para acceder a la cámara.</p>
           </div>
 
-          <aside class="results-column">
-            <article class="result-card panel">
-              <span class="section-kicker">02 / MANOS</span>
-              <h3>Gesto reconocido</h3>
-              <p class="result-value" id="gestureValue">—</p>
-              <p class="result-detail" id="handDetail">Esperando una mano frente a la cámara.</p>
+          <aside class="analysis-panel">
+            <div class="analysis-heading"><div><p class="section-index">02 — RESULTADOS</p><h2>Análisis de IA</h2></div><span class="analysis-chip">EN VIVO</span></div>
+
+            <article class="data-card glass-panel">
+              <div class="data-card-heading"><span class="data-icon hand-icon">✋</span><div><h3>Reconocimiento de manos</h3><p>GESTOS Y POSICIONES</p></div><span class="card-number">01</span></div>
+              <div class="data-result" id="gestureValue">Esperando...</div>
+              <p class="data-description" id="handDetail">La IA identificará gestos como mano abierta, puño o pulgar arriba.</p>
             </article>
-            <article class="result-card panel">
-              <span class="section-kicker">03 / ROSTRO</span>
-              <h3>Expresión visual</h3>
-              <p class="result-value" id="faceValue">—</p>
-              <p class="result-detail" id="faceDetail">Esperando un rostro.</p>
+
+            <article class="data-card glass-panel">
+              <div class="data-card-heading"><span class="data-icon face-icon">◎</span><div><h3>Reconocimiento facial</h3><p>ROSTRO Y RASGOS VISIBLES</p></div><span class="card-number">02</span></div>
+              <div class="data-result" id="faceValue">Esperando...</div>
+              <p class="data-description" id="faceDetail">La IA buscará un rostro y analizará movimientos faciales visibles.</p>
             </article>
-            <article class="result-card panel">
-              <span class="section-kicker">04 / MOVIMIENTO</span>
-              <h3>Orientación de la cabeza</h3>
-              <p class="result-value" id="headValue">—</p>
-              <p class="result-detail" id="headDetail">Se estimará usando puntos faciales.</p>
+
+            <article class="data-card glass-panel">
+              <div class="data-card-heading"><span class="data-icon head-icon">⌁</span><div><h3>Movimiento de cabeza</h3><p>ORIENTACIÓN APROXIMADA</p></div><span class="card-number">03</span></div>
+              <div class="data-result" id="headValue">Esperando...</div>
+              <p class="data-description" id="headDetail">Se estimará si la cabeza está de frente o girada.</p>
             </article>
           </aside>
         </section>
 
-        <section class="info-strip">
-          <div><span class="info-number">01</span><p><strong>Manos</strong><br />Clasificación de gestos comunes.</p></div>
-          <div><span class="info-number">02</span><p><strong>Rostro</strong><br />Detección de puntos y rasgos faciales.</p></div>
-          <div><span class="info-number">03</span><p><strong>Cabeza</strong><br />Estimación aproximada de orientación.</p></div>
+        <section class="legend-section">
+          <div class="legend-title"><p class="section-index">03 — ¿QUÉ ANALIZA EL SISTEMA?</p><h2>Componentes del escáner</h2></div>
+          <div class="legend-grid">
+            <article class="legend-card"><span class="legend-symbol">✋</span><div><h3>Manos</h3><p>Reconoce gestos comunes y muestra su nombre en español.</p></div></article>
+            <article class="legend-card"><span class="legend-symbol">◎</span><div><h3>Rostro</h3><p>Detecta la presencia del rostro y observa puntos faciales.</p></div></article>
+            <article class="legend-card"><span class="legend-symbol">⌁</span><div><h3>Cabeza</h3><p>Calcula de forma aproximada hacia dónde está orientada.</p></div></article>
+          </div>
         </section>
-        <p class="disclaimer">Las expresiones son estimaciones visuales de movimientos faciales; no identifican emociones reales ni estados mentales.</p>
+        <p class="privacy-note"><span>◆</span> PRIVACIDAD: el video se procesa en tu navegador. Esta página no graba ni guarda imágenes. Las expresiones son estimaciones visuales y no identifican emociones reales.</p>
       </main>
-      <footer>RECONOCIMIENTO DE GESTOS CON IA <span>Desarrollado con MediaPipe</span></footer>
+      <footer><span>NEUROVISION / RECONOCIMIENTO FACIAL Y MANOS</span><span>POWERED BY MEDIAPIPE <b>●</b></span></footer>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
