@@ -102,8 +102,10 @@
           </div>
           <div class="custom-model-controls">
             <input id="customModelInput" type="file" accept=".tflite" hidden />
-            <button class="button button-primary" id="customModelButton">CARGAR MODELO .TFLITE</button>
-            <span class="custom-model-note">Los modelos personalizados necesitan entrenamiento previo y metadatos compatibles.</span>
+            <button class="button button-primary" id="customModelButton">CARGAR MODELO DE OBJETOS (.TFLITE)</button>
+            <input id="customGestureInput" type="file" accept=".task" hidden />
+            <button class="button button-primary" id="customGestureButton">CARGAR MODELO DE SEÑAS (.TASK)</button>
+            <span class="custom-model-note">Los modelos propios deben entrenarse antes y ser compatibles con MediaPipe Object Detector o Gesture Recognizer.</span>
           </div>
         </section>
 
