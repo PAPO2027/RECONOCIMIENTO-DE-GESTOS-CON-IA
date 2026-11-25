@@ -77,18 +77,42 @@ const OBJECT_INTERVAL_MS = 450;
 const ZERO_SHOT_INTERVAL_MS = 2400;
 const GENERAL_ZERO_SHOT_INTERVAL_MS = 12000;
 const ZERO_SHOT_LABELS = [
-  "eyeglasses", "sunglasses", "glasses case",
-  "wireless earbuds", "earbuds", "earbuds charging case", "wireless earbuds case",
-  "headphones", "headphone case",
-  "smartphone", "mobile phone", "cell phone", "phone case",
-  "laptop", "tablet", "computer mouse", "keyboard", "computer monitor",
-  "wallet", "purse", "keys", "keychain", "pen", "pencil", "notebook",
-  "watch", "smartwatch", "water bottle", "coffee mug", "cup",
-  "phone charger", "USB cable", "power adapter", "power bank",
-  "remote control", "game controller", "scissors", "umbrella",
-  "backpack", "handbag", "book", "camera", "calculator",
-  "speaker", "Bluetooth speaker", "flash drive", "USB stick",
-  "perfume bottle", "stapler", "coin purse", "sunglasses case"
+  // Electrónica y accesorios
+  "TV remote control", "computer mouse", "computer keyboard", "computer monitor",
+  "laptop computer", "desktop computer", "tablet", "smartphone", "phone case",
+  "wireless earbuds", "earbuds charging case", "over-ear headphones", "headphone case",
+  "webcam", "digital camera", "camera lens", "microphone", "tripod",
+  "portable speaker", "Bluetooth speaker", "video game controller", "game console",
+  "Wi-Fi router", "USB flash drive", "SD memory card", "USB cable",
+  "phone charger", "power adapter", "power bank", "extension cord",
+  "smartwatch", "digital wristwatch", "calculator",
+  // Escritorio, oficina y útiles escolares
+  "ballpoint pen", "pencil", "marker", "highlighter", "eraser",
+  "pencil sharpener", "ruler", "geometry compass", "protractor",
+  "notebook", "textbook", "paper folder", "ring binder", "pencil case",
+  "stapler", "paper clips", "tape dispenser", "glue stick", "scissors",
+  "sticky notes", "envelope", "printer", "desk organizer", "backpack",
+  // Cocina y recipientes
+  "water bottle", "thermos", "coffee mug", "drinking glass", "ceramic plate",
+  "bowl", "spoon", "fork", "electric kettle", "frying pan", "cooking pot",
+  "toaster", "blender", "food storage container", "lunch box",
+  // Hogar y objetos personales
+  "wall clock", "alarm clock", "table lamp", "light bulb", "flashlight",
+  "candle", "tissue box", "soap dispenser", "plant pot", "vase",
+  "picture frame", "door key", "keychain", "wallet", "purse",
+  "suitcase", "umbrella", "shoe", "sneaker", "baseball cap", "hat",
+  "belt", "sunglasses", "eyeglasses", "glasses case", "perfume bottle",
+  "deodorant stick", "toothbrush", "toothpaste tube", "hairbrush", "comb",
+  "hair dryer", "shampoo bottle", "lotion bottle", "makeup brush", "lipstick",
+  // Herramientas y accesorios
+  "screwdriver", "hammer", "wrench", "pliers", "measuring tape",
+  // Deportes, juegos y juguetes
+  "soccer ball", "basketball", "tennis racket", "tennis ball",
+  "skateboard", "toy car", "teddy bear", "building blocks",
+  "playing cards", "board game box", "dice",
+  // Otros objetos comunes
+  "book", "handbag", "camera", "remote control", "headphones",
+  "watch", "water bottle", "coffee mug", "power bank", "flash drive"
 ];
 const FACE_ACCESSORY_LABELS = [
   "eyeglasses", "glasses", "sunglasses"
@@ -498,7 +522,7 @@ async function runZeroShotObjectDetection(timestamp) {
       const generalPredictions = await zeroShotObjectDetector(
         objectInputCanvas,
         ZERO_SHOT_LABELS,
-        { threshold: 0.07, top_k: 12 }
+        { threshold: 0.11, top_k: 18 }
       );
       if (!isRunning || !isFeatureSelected("objects")) return;
 
@@ -646,7 +670,40 @@ function translateObject(label) {
     wallet:"billetera", keys:"llaves", key:"llave", pen:"esfero", pencil:"lápiz",
     notebook:"cuaderno", stapler:"grapadora", remote_control:"control remoto",
     charger:"cargador", power_bank:"batería portátil", watch:"reloj", monitor:"monitor",
-    tablet:"tableta", game_controller:"control de videojuegos"
+    tablet:"tableta", game_controller:"control de videojuegos",
+    "tv remote control":"control remoto de TV",
+    "computer mouse":"mouse", "computer keyboard":"teclado de computadora",
+    "computer monitor":"monitor", "laptop computer":"computadora portátil",
+    "desktop computer":"computadora de escritorio", "phone case":"funda de celular",
+    "over-ear headphones":"audífonos de diadema", "earbuds charging case":"estuche de audífonos",
+    "webcam":"cámara web", "digital camera":"cámara digital", "camera lens":"lente de cámara",
+    "microphone":"micrófono", "tripod":"trípode", "portable speaker":"parlante portátil",
+    "bluetooth speaker":"parlante Bluetooth", "video game controller":"control de videojuegos",
+    "game console":"consola de videojuegos", "wi-fi router":"router", "sd memory card":"tarjeta SD",
+    "usb flash drive":"memoria USB", "usb cable":"cable USB", "phone charger":"cargador de celular",
+    "power adapter":"adaptador de corriente", "extension cord":"extensión eléctrica",
+    "digital wristwatch":"reloj digital", "ballpoint pen":"esfero", "marker":"marcador",
+    "highlighter":"resaltador", "eraser":"borrador", "pencil sharpener":"sacapuntas",
+    "geometry compass":"compás", "protractor":"transportador", "textbook":"libro de texto",
+    "paper folder":"carpeta", "ring binder":"archivador", "pencil case":"cartuchera",
+    "paper clips":"clips", "tape dispenser":"dispensador de cinta", "glue stick":"barra de pegamento",
+    "sticky notes":"notas adhesivas", "desk organizer":"organizador de escritorio",
+    "thermos":"termo", "drinking glass":"vaso", "ceramic plate":"plato",
+    "electric kettle":"hervidor eléctrico", "frying pan":"sartén", "cooking pot":"olla",
+    "food storage container":"recipiente para alimentos", "lunch box":"lonchera",
+    "wall clock":"reloj de pared", "alarm clock":"despertador", "table lamp":"lámpara",
+    "light bulb":"foco", "flashlight":"linterna", "tissue box":"caja de pañuelos",
+    "soap dispenser":"dispensador de jabón", "plant pot":"maceta", "picture frame":"marco de fotos",
+    "door key":"llave", "sneaker":"zapatilla", "baseball cap":"gorra",
+    "deodorant stick":"desodorante", "toothpaste tube":"pasta dental",
+    "hairbrush":"cepillo para cabello", "comb":"peine", "hair dryer":"secador de cabello",
+    "shampoo bottle":"champú", "lotion bottle":"crema", "makeup brush":"brocha de maquillaje",
+    "screwdriver":"destornillador", "hammer":"martillo", "wrench":"llave inglesa",
+    "pliers":"alicates", "measuring tape":"cinta métrica", "soccer ball":"balón de fútbol",
+    "basketball":"balón de baloncesto", "tennis racket":"raqueta de tenis",
+    "tennis ball":"pelota de tenis", "toy car":"carro de juguete",
+    "building blocks":"bloques de construcción", "playing cards":"naipes",
+    "board game box":"caja de juego de mesa", "dice":"dados"
   };
   return names[label.toLowerCase()] || label.replaceAll("_", " ");
 }
