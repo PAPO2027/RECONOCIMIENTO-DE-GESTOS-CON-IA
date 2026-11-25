@@ -3,6 +3,7 @@ import "./style.css";
 
 const video = document.querySelector("#camera");
 const canvas = document.querySelector("#overlay");
+const cameraStage = document.querySelector(".camera-stage");
 const ctx = canvas.getContext("2d");
 const startButton = document.querySelector("#startButton");
 const stopButton = document.querySelector("#stopButton");
@@ -42,12 +43,12 @@ const gestureNames = {
 
 function setMessage(text, isError = false) {
   message.textContent = text;
-  message.style.color = isError ? "#ff9b9b" : "";
+  message.style.color = isError ? "#ff8fa3" : "";
 }
 
 async function loadModels() {
-  setMessage("Cargando los modelos de inteligencia artificial. La primera carga puede tardar un poco.");
-  appStatus.textContent = "Cargando IA";
+  setMessage("Preparando inteligencia artificial. La primera carga puede tardar unos segundos.");
+  appStatus.textContent = "CARGANDO MODELOS";
   const vision = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
@@ -69,6 +70,10 @@ async function loadModels() {
 }
 
 async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setMessage("Tu navegador no permite acceder a la cámara. Abre la página mediante HTTPS o desde localhost.", true);
+    return;
+  }
   startButton.disabled = true;
   try {
     if (!gestureRecognizer || !faceLandmarker) await loadModels();
@@ -85,22 +90,27 @@ async function startCamera() {
     isRunning = true;
     lastVideoTime = -1;
     placeholder.hidden = true;
+    cameraStage.classList.add("scanning");
     stopButton.disabled = false;
-    cameraStatus.textContent = "Cámara activa";
+    cameraStatus.innerHTML = "<span></span> CÁMARA ACTIVA";
     cameraStatus.classList.add("active");
-    appStatus.textContent = "Analizando";
-    setMessage("Cámara activa. Coloca tus manos y rostro frente a ella.");
+    appStatus.textContent = "SISTEMA ANALIZANDO";
+    setMessage("Escáner activo. Coloca tus manos y tu rostro frente a la cámara.");
     renderLoop();
   } catch (error) {
     console.error(error);
     const reason = error.name === "NotAllowedError"
-      ? "No se concedió permiso para usar la cámara. Revisa los permisos del navegador."
+      ? "No diste permiso para usar la cámara. Autoriza el acceso desde los ajustes del navegador."
       : error.name === "NotFoundError"
-        ? "No se encontró una cámara disponible."
-        : "No se pudo iniciar la cámara o cargar los modelos. Comprueba tu conexión e inténtalo de nuevo.";
+        ? "No se encontró una cámara conectada a este dispositivo."
+        : error.name === "NotReadableError"
+          ? "La cámara está siendo utilizada por otra aplicación. Ciérrala e inténtalo de nuevo."
+          : "No se pudo iniciar el escáner. Revisa tu conexión a internet e inténtalo otra vez.";
     setMessage(reason, true);
-    appStatus.textContent = "Revisar configuración";
+    appStatus.textContent = "ERROR DE CONEXIÓN";
     startButton.disabled = false;
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    stream = null;
   }
 }
 
@@ -121,23 +131,28 @@ function renderLoop() {
 function showHands(result) {
   const gestures = result.gestures ?? [];
   if (!gestures.length) {
-    gestureValue.textContent = "No detectada";
-    handDetail.textContent = "Muestra una mano dentro de la imagen.";
+    gestureValue.textContent = "Sin manos detectadas";
+    handDetail.textContent = "Muestra una o ambas manos frente a la cámara.";
     return;
   }
-  const best = gestures[0][0];
-  const label = gestureNames[best.categoryName] || best.categoryName || "Gesto detectado";
-  const percent = Math.round((best.score || 0) * 100);
-  gestureValue.textContent = label;
-  handDetail.textContent = `Confianza del modelo: ${percent}% · Manos detectadas: ${gestures.length}`;
+  const labels = gestures.map((hand, index) => {
+    const best = hand[0];
+    const label = gestureNames[best.categoryName] || "Gesto no identificado";
+    const side = result.handednesses?.[index]?.[0]?.displayName;
+    const sideSpanish = side === "Left" ? "izquierda" : side === "Right" ? "derecha" : "";
+    return sideSpanish ? `${label} (${sideSpanish})` : label;
+  });
+  gestureValue.textContent = labels.join(" · ");
+  const confidence = Math.round((gestures[0][0].score || 0) * 100);
+  handDetail.textContent = `${gestures.length} mano(s) reconocida(s) · Confianza principal: ${confidence}%`;
 }
 
 function showFace(result) {
   if (!result.faceLandmarks?.length) {
-    faceValue.textContent = "No detectado";
-    faceDetail.textContent = "Mira hacia la cámara para analizar puntos faciales.";
-    headValue.textContent = "—";
-    headDetail.textContent = "Sin rostro para estimar la orientación.";
+    faceValue.textContent = "Rostro no detectado";
+    faceDetail.textContent = "Coloca tu rostro dentro del área de la cámara.";
+    headValue.textContent = "Sin datos";
+    headDetail.textContent = "Se necesita detectar un rostro para estimar su orientación.";
     return;
   }
 
@@ -147,14 +162,12 @@ function showFace(result) {
   const smile = ((scores.mouthSmileLeft || 0) + (scores.mouthSmileRight || 0)) / 2;
   const mouthOpen = scores.jawOpen || 0;
 
-  let visualLabel = "Expresión neutral aproximada";
+  let visualLabel = "Rostro detectado";
   if (smile > 0.45) visualLabel = "Sonrisa detectada";
   else if (mouthOpen > 0.5) visualLabel = "Boca abierta";
-
   faceValue.textContent = visualLabel;
-  faceDetail.textContent = "Estimación basada en movimientos faciales visibles; no determina emociones.";
+  faceDetail.textContent = "Se detectaron puntos faciales. La etiqueta describe rasgos visibles, no emociones.";
 
-  // Estimación sencilla de orientación a partir de la posición relativa de la nariz y los ojos.
   const leftEye = landmarks[33];
   const rightEye = landmarks[263];
   const nose = landmarks[1];
@@ -162,18 +175,20 @@ function showFace(result) {
   const eyeCenterY = (leftEye.y + rightEye.y) / 2;
   const horizontalOffset = nose.x - eyeCenterX;
   const verticalOffset = nose.y - eyeCenterY;
+
   let direction = "De frente";
-  if (horizontalOffset > 0.035) direction = "Giro hacia un lado";
-  if (horizontalOffset < -0.035) direction = "Giro hacia el otro lado";
-  if (verticalOffset < 0.12) direction = "Cabeza inclinada hacia arriba";
-  if (verticalOffset > 0.22) direction = "Cabeza inclinada hacia abajo";
+  if (Math.abs(horizontalOffset) > 0.035) {
+    direction = horizontalOffset > 0 ? "Girando hacia un lado" : "Girando hacia el otro lado";
+  }
+  if (verticalOffset < 0.12) direction = "Mirando hacia arriba";
+  else if (verticalOffset > 0.22) direction = "Mirando hacia abajo";
   headValue.textContent = direction;
-  headDetail.textContent = "Orientación aproximada; puede variar según la posición y la cámara.";
+  headDetail.textContent = "Estimación aproximada según la posición de los puntos faciales.";
 }
 
 function drawPoints(handResult, faceResult) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#b9f27c";
+  ctx.fillStyle = "#43e8ff";
   for (const hand of handResult.landmarks || []) {
     for (const point of hand) {
       ctx.beginPath();
@@ -181,7 +196,7 @@ function drawPoints(handResult, faceResult) {
       ctx.fill();
     }
   }
-  ctx.fillStyle = "#75d9ff";
+  ctx.fillStyle = "#b69aff";
   for (const face of faceResult.faceLandmarks || []) {
     for (let i = 0; i < face.length; i += 5) {
       const point = face[i];
@@ -195,23 +210,25 @@ function drawPoints(handResult, faceResult) {
 function stopCamera() {
   isRunning = false;
   if (animationId) cancelAnimationFrame(animationId);
+  animationId = null;
   if (stream) stream.getTracks().forEach(track => track.stop());
   stream = null;
   video.srcObject = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   placeholder.hidden = false;
+  cameraStage.classList.remove("scanning");
   startButton.disabled = false;
   stopButton.disabled = true;
-  cameraStatus.textContent = "Cámara apagada";
+  cameraStatus.innerHTML = "<span></span> CÁMARA APAGADA";
   cameraStatus.classList.remove("active");
-  appStatus.textContent = "En espera";
-  gestureValue.textContent = "—";
-  handDetail.textContent = "Esperando una mano frente a la cámara.";
-  faceValue.textContent = "—";
-  faceDetail.textContent = "Esperando un rostro.";
-  headValue.textContent = "—";
-  headDetail.textContent = "Se estimará usando puntos faciales.";
-  setMessage("Cámara detenida. El video no se guarda.");
+  appStatus.textContent = "SISTEMA EN ESPERA";
+  gestureValue.textContent = "Esperando...";
+  handDetail.textContent = "La IA identificará gestos cuando actives la cámara.";
+  faceValue.textContent = "Esperando...";
+  faceDetail.textContent = "La IA buscará un rostro y analizará sus rasgos visibles.";
+  headValue.textContent = "Esperando...";
+  headDetail.textContent = "Se estimará la orientación de la cabeza.";
+  setMessage("Escáner detenido. La cámara está apagada.");
 }
 
 startButton.addEventListener("click", startCamera);
