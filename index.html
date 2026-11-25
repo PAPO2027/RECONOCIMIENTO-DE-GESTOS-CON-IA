@@ -33,6 +33,21 @@
           </div>
         </section>
 
+        <section class="recognition-picker glass-panel" aria-labelledby="recognitionTitle">
+          <div class="picker-heading">
+            <div><p class="section-index">00 — CONFIGURACIÓN</p><h2 id="recognitionTitle">¿Qué quieres reconocer?</h2><p>Selecciona una o varias funciones. Puedes combinarlas como quieras.</p></div>
+            <div class="picker-actions"><button type="button" class="picker-link" id="selectAllFeatures">Seleccionar todo</button><button type="button" class="picker-link" id="clearFeatures">Limpiar</button></div>
+          </div>
+          <div class="feature-options">
+            <label class="feature-option"><input type="checkbox" data-feature="hands" checked><span class="feature-check"></span><span class="feature-emoji">✋</span><span><b>Manos y dedos</b><small>Gestos, señas y dedos levantados</small></span></label>
+            <label class="feature-option"><input type="checkbox" data-feature="face" checked><span class="feature-check"></span><span class="feature-emoji">◎</span><span><b>Rostro</b><small>Detección y malla facial</small></span></label>
+            <label class="feature-option"><input type="checkbox" data-feature="head" checked><span class="feature-check"></span><span class="feature-emoji">⌁</span><span><b>Movimiento de cabeza</b><small>Dirección y ángulos 3D</small></span></label>
+            <label class="feature-option"><input type="checkbox" data-feature="objects" checked><span class="feature-check"></span><span class="feature-emoji">◉</span><span><b>Objetos</b><small>Objetos cotidianos y modelos propios</small></span></label>
+            <label class="feature-option"><input type="checkbox" data-feature="faceActions" checked><span class="feature-check"></span><span class="feature-emoji">◌</span><span><b>Acciones faciales</b><small>Guiños, parpadeos y boca</small></span></label>
+          </div>
+          <p class="picker-summary" id="selectionSummary">5 funciones seleccionadas</p>
+        </section>
+
         <section class="scanner-layout">
           <div class="camera-panel glass-panel">
             <div class="panel-top">
