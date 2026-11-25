@@ -30,6 +30,9 @@ let faceLandmarker = null;
 let animationId = null;
 let lastVideoTime = -1;
 let isRunning = false;
+const previousHandCenters = new Map();
+let previousFrameTime = 0;
+const HAND_CONNECTIONS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 const gestureNames = {
   Closed_Fist: "Puño cerrado",
@@ -144,7 +147,8 @@ function showHands(result) {
   });
   gestureValue.textContent = labels.join(" · ");
   const confidence = Math.round((gestures[0][0].score || 0) * 100);
-  handDetail.textContent = `${gestures.length} mano(s) reconocida(s) · Confianza principal: ${confidence}%`;
+  const movement = getHandMovement(result.landmarks || [], result.handednesses || []);
+  handDetail.textContent = `${gestures.length} mano(s) reconocida(s) · Confianza principal: ${confidence}% · ${movement}`;
 }
 
 function showFace(result) {
@@ -186,22 +190,65 @@ function showFace(result) {
   headDetail.textContent = "Estimación aproximada según la posición de los puntos faciales.";
 }
 
+function getHandMovement(hands, handednesses) {
+  previousFrameTime = performance.now();
+  const currentKeys = new Set();
+  let label = "Movimiento estable";
+  hands.forEach((hand, index) => {
+    if (!hand.length) return;
+    const side = handednesses[index]?.[0]?.categoryName || `mano-${index}`;
+    currentKeys.add(side);
+    const wrist = hand[0];
+    const previous = previousHandCenters.get(side);
+    if (previous) {
+      const dx = wrist.x - previous.x;
+      const dy = wrist.y - previous.y;
+      if (Math.hypot(dx, dy) > 0.012) {
+        if (Math.abs(dx) > Math.abs(dy)) label = dx > 0 ? "Movimiento hacia la derecha" : "Movimiento hacia la izquierda";
+        else label = dy > 0 ? "Movimiento hacia abajo" : "Movimiento hacia arriba";
+      }
+    }
+    previousHandCenters.set(side, { x: wrist.x, y: wrist.y });
+  });
+  for (const key of previousHandCenters.keys()) if (!currentKeys.has(key)) previousHandCenters.delete(key);
+  return label;
+}
+
+function drawConnections(points, connections, color, width) {
+  if (!connections?.length) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  for (const link of connections) {
+    const a = points[link.start ?? link[0]];
+    const b = points[link.end ?? link[1]];
+    if (!a || !b) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x * canvas.width, a.y * canvas.height);
+    ctx.lineTo(b.x * canvas.width, b.y * canvas.height);
+    ctx.stroke();
+  }
+}
+
 function drawPoints(handResult, faceResult) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#43e8ff";
   for (const hand of handResult.landmarks || []) {
+    drawConnections(hand, HAND_CONNECTIONS, "rgba(182,154,255,0.95)", 2.2);
+    ctx.fillStyle = "#43e8ff";
     for (const point of hand) {
       ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 4, 0, Math.PI * 2);
+      ctx.arc(point.x * canvas.width, point.y * canvas.height, 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  ctx.fillStyle = "#b69aff";
+  const faceConnections = FaceLandmarker.FACE_LANDMARKS_TESSELATION || [];
   for (const face of faceResult.faceLandmarks || []) {
-    for (let i = 0; i < face.length; i += 5) {
+    drawConnections(face, faceConnections, "rgba(67,232,255,0.32)", 0.8);
+    ctx.fillStyle = "#b69aff";
+    for (let i = 0; i < face.length; i += 3) {
       const point = face[i];
       ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 1.7, 0, Math.PI * 2);
+      ctx.arc(point.x * canvas.width, point.y * canvas.height, 1.25, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -215,6 +262,8 @@ function stopCamera() {
   stream = null;
   video.srcObject = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  previousHandCenters.clear();
+  previousFrameTime = 0;
   placeholder.hidden = false;
   cameraStage.classList.remove("scanning");
   startButton.disabled = false;
